@@ -174,12 +174,12 @@
       <form @submit.prevent="login" class="space-y-4">
         <div>
           <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Email Address</label>
-          <input type="email" x-model="loginEmail" required class="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-slate-500 outline-none transition" placeholder="admin@logpulse.io">
+          <input type="email" x-model="loginEmail" required autocomplete="email" class="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-slate-500 outline-none transition" placeholder="admin@example.com">
         </div>
 
         <div>
           <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Password</label>
-          <input type="password" x-model="loginPassword" required class="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-slate-500 outline-none transition" placeholder="••••••••">
+          <input type="password" x-model="loginPassword" required autocomplete="current-password" class="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-slate-500 outline-none transition" placeholder="Enter your password">
         </div>
 
         <div x-show="loginError" class="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs rounded-lg" x-text="loginError"></div>
@@ -190,7 +190,9 @@
         </button>
 
         <div class="text-center pt-2">
-          <span class="text-xs text-slate-500">Default: admin@logpulse.io / AdminSecret2026!</span>
+          <a href="/" class="text-xs text-slate-500 hover:text-brand-400 transition flex items-center justify-center gap-1">
+            <span>&larr; Return to Homepage</span>
+          </a>
         </div>
       </form>
     </div>
@@ -677,8 +679,8 @@
         loading: false,
 
         // Login form
-        loginEmail: 'admin@logpulse.io',
-        loginPassword: 'AdminSecret2026!',
+        loginEmail: '',
+        loginPassword: '',
         loginError: '',
 
         // Projects

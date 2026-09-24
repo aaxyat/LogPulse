@@ -64,6 +64,24 @@ $authMw = fn(&$ctx) => ['user' => AuthMiddleware::requireAuth($jwtSecret)];
 $adminMw = fn(&$ctx) => ['user' => AuthMiddleware::requireAdmin($jwtSecret)];
 
 // -------------------------------------------------------------
+// Web Frontend Routes
+// -------------------------------------------------------------
+$router->get('/', function () {
+    header('Content-Type: text/html; charset=UTF-8');
+    require dirname(__DIR__) . '/public/assets/landing.html';
+});
+
+$router->get('/dashboard', function () {
+    header('Content-Type: text/html; charset=UTF-8');
+    require dirname(__DIR__) . '/public/assets/dashboard.html';
+});
+
+$router->get('/login', function () {
+    header('Content-Type: text/html; charset=UTF-8');
+    require dirname(__DIR__) . '/public/assets/dashboard.html';
+});
+
+// -------------------------------------------------------------
 // Documentation Route
 // -------------------------------------------------------------
 $router->get('/docs', function () {

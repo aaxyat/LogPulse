@@ -95,10 +95,16 @@ class Router
             return;
         }
 
-        // If root or web request, serve web view
+        // If web request, route appropriately
         http_response_code(200);
         header('Content-Type: text/html; charset=UTF-8');
-        require dirname(__DIR__) . '/public/assets/dashboard.html';
+        if ($uri === '/' || $uri === '') {
+            require dirname(__DIR__) . '/public/assets/landing.html';
+        } elseif ($uri === '/docs') {
+            require dirname(__DIR__) . '/public/assets/docs.html';
+        } else {
+            require dirname(__DIR__) . '/public/assets/dashboard.html';
+        }
     }
 
     private function handleCors(): void

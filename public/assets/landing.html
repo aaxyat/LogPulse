@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LogPulse — Zero-Dependency Observability & Log Ingestion</title>
+  <meta name="description" content="Modern, zero-dependency log ingestion, streaming observability, and synthetic monitoring for shared cPanel hosting and VPS. Built with pure PHP 8.1+ and MySQL.">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Alpine.js CDN -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              400: '#38bdf8',
+              500: '#0ea5e9',
+              600: '#0284c7',
+            },
+            slate: {
+              850: '#111827',
+              900: '#0b0f19',
+              950: '#06090f',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Menlo', 'Monaco', 'Courier New', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Theme initialization script (before body to prevent FOUC) -->
+  <script>
+    (function() {
+      function getPreferredTheme() {
+        const stored = localStorage.getItem('lp_theme');
+        if (stored === 'light' || stored === 'dark') return stored;
+        return 'system';
+      }
+      function updateTheme(theme) {
+        const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (isDark) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      }
+      const initial = getPreferredTheme();
+      updateTheme(initial);
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        if ((localStorage.getItem('lp_theme') || 'system') === 'system') {
+          updateTheme('system');
+        }
+      });
+    })();
+  </script>
+
+  <style>
+    [x-cloak] { display: none !important; }
+    html.dark, html.dark body {
+      background-color: #06090f !important;
+      color: #f1f5f9 !important;
+    }
+    html:not(.dark), html:not(.dark) body {
+      background-color: #f8fafc !important;
+      color: #0f172a !important;
+    }
+    html:not(.dark) header {
+      background-color: rgba(255, 255, 255, 0.85) !important;
+      border-color: #e2e8f0 !important;
+    }
+    html:not(.dark) .card-surface {
+      background-color: #ffffff !important;
+      border-color: #e2e8f0 !important;
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05) !important;
+    }
+    html:not(.dark) .card-surface * {
+      color: #0f172a;
+    }
+    html:not(.dark) .card-surface .text-slate-400,
+    html:not(.dark) .card-surface .text-slate-500 {
+      color: #64748b !important;
+    }
+    html:not(.dark) .text-muted {
+      color: #64748b !important;
+    }
+    html:not(.dark) .terminal-surface {
+      background-color: #0b0f19 !important;
+      color: #f1f5f9 !important;
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    .dark ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    
+    .pulse-dot {
+      animation: pulseGlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.15); }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen flex flex-col selection:bg-brand-500/20 selection:text-brand-400" x-data="landingApp()" x-cloak>
+
+  <!-- Sticky Top Navigation -->
+  <header class="border-b border-slate-800/80 bg-slate-900/70 backdrop-blur-md sticky top-0 z-50 px-6 py-3.5 transition-colors">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+      
+      <!-- Brand Logo -->
+      <a href="/" class="flex items-center gap-2.5 group">
+        <div class="h-8 w-8 rounded-lg bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400 font-mono font-bold text-sm group-hover:border-brand-500/40 transition">
+          LP
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-base tracking-tight text-white dark:text-white">LogPulse</span>
+          <span class="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-brand-500/10 text-brand-400 border border-brand-500/20">v1.0</span>
+        </div>
+      </a>
+
+      <!-- Desktop Nav Links -->
+      <nav class="hidden md:flex items-center gap-7 text-xs font-medium text-slate-600 dark:text-slate-400">
+        <a href="#features" class="hover:text-slate-900 dark:hover:text-white transition">Features</a>
+        <a href="#architecture" class="hover:text-slate-900 dark:hover:text-white transition">Zero-Bloat Arch</a>
+        <a href="#snippets" class="hover:text-slate-900 dark:hover:text-white transition">Integrations</a>
+        <a href="/docs" class="hover:text-brand-500 transition flex items-center gap-1">
+          <span>API Docs</span>
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+        </a>
+        <a href="https://github.com/aaxyat/LogPulse" target="_blank" class="hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1">
+          <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+          <span>GitHub</span>
+        </a>
+      </nav>
+
+      <!-- Right Action Strip -->
+      <div class="flex items-center gap-3">
+        <!-- Theme Toggle -->
+        <button @click="cycleTheme()" class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs text-slate-600 dark:text-slate-300 hover:text-brand-500 transition shadow-sm" :title="'Theme: ' + themeMode">
+          <template x-if="themeMode === 'system'">
+            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+          </template>
+          <template x-if="themeMode === 'light'">
+            <svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+          </template>
+          <template x-if="themeMode === 'dark'">
+            <svg class="w-3.5 h-3.5 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+          </template>
+        </button>
+
+        <!-- Sign In / Dashboard CTA -->
+        <a href="/login" class="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white transition">
+          Sign In
+        </a>
+        <a href="/dashboard" class="bg-brand-500 hover:bg-brand-600 text-slate-950 font-semibold text-xs px-3.5 py-1.5 rounded-lg transition shadow-sm flex items-center gap-1.5">
+          <span>Open Console</span>
+          <span>&rarr;</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- HERO SECTION -->
+  <main class="flex-1">
+    <section class="relative pt-16 pb-20 md:pt-24 md:pb-28 overflow-hidden">
+      <!-- Glow background gradients -->
+      <div class="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-brand-500/10 rounded-full blur-[120px] pointer-events-none -z-10"></div>
+      <div class="absolute top-1/3 left-1/3 w-[300px] h-[200px] bg-emerald-500/10 rounded-full blur-[100px] pointer-events-none -z-10"></div>
+
+      <div class="max-w-7xl mx-auto px-6">
+        <!-- Eyebrow Pill -->
+        <div class="flex items-center justify-center">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900/90 dark:bg-slate-900 border border-slate-800 text-xs font-medium text-slate-300 shadow-sm">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot"></span>
+            <span>Zero-Dependency Log Ingestion & Synthetic Monitoring</span>
+          </div>
+        </div>
+
+        <!-- Headline & Value Pitch -->
+        <div class="text-center mt-7 max-w-3xl mx-auto">
+          <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-[1.1]">
+            Real-time observability for <span class="bg-gradient-to-r from-brand-400 via-sky-300 to-emerald-400 bg-clip-text text-transparent">self-hosted infrastructure</span>.
+          </h1>
+          <p class="mt-5 text-base md:text-lg text-slate-600 dark:text-slate-400 leading-relaxed font-normal">
+            Zero vendor bloat. Zero daemon baggage. Pipe logs directly from Docker containers, microservices, and webhooks into your MySQL database on shared cPanel or VPS.
+          </p>
+
+          <!-- Action Buttons -->
+          <div class="mt-8 flex flex-wrap items-center justify-center gap-3.5">
+            <a href="/dashboard" class="bg-brand-500 hover:bg-brand-600 text-slate-950 font-semibold text-sm px-5 py-2.5 rounded-lg transition shadow-md flex items-center gap-2">
+              <span>Launch Live Console</span>
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+            </a>
+            <a href="/docs" class="px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900 text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-brand-500 transition shadow-sm flex items-center gap-2">
+              <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h4m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+              <span>Explore API Docs</span>
+            </a>
+            <a href="https://github.com/aaxyat/LogPulse" target="_blank" class="px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900 text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-white transition shadow-sm flex items-center gap-2">
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+              <span>GitHub (MIT)</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- DOMINANT VISUAL ANCHOR: Interactive Live Telemetry Terminal Card -->
+        <div class="mt-14 max-w-5xl mx-auto">
+          <div class="rounded-xl border border-slate-800 bg-slate-900/90 shadow-2xl overflow-hidden terminal-surface">
+            <!-- Window Topbar -->
+            <div class="px-4 py-3 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full bg-rose-500/80"></span>
+                <span class="w-3 h-3 rounded-full bg-amber-500/80"></span>
+                <span class="w-3 h-3 rounded-full bg-emerald-500/80"></span>
+                <span class="ml-2 font-mono text-xs text-slate-400">cluster-production.logpulse.io &mdash; live stream</span>
+              </div>
+              <div class="flex items-center gap-3 text-xs font-mono">
+                <span class="flex items-center gap-1.5 text-emerald-400">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot"></span>
+                  <span>Active Polling: 3s</span>
+                </span>
+                <span class="text-slate-600">|</span>
+                <span class="text-slate-400">Buffer: 4 events</span>
+              </div>
+            </div>
+
+            <!-- Terminal Mock Stream Table -->
+            <div class="overflow-x-auto font-mono text-xs">
+              <table class="w-full text-left">
+                <thead class="bg-slate-950/50 text-slate-400 text-[11px] border-b border-slate-800/80">
+                  <tr>
+                    <th class="py-2.5 px-4">TIMESTAMP</th>
+                    <th class="py-2.5 px-3">PROJECT</th>
+                    <th class="py-2.5 px-3">SEVERITY</th>
+                    <th class="py-2.5 px-4">EVENT MESSAGE</th>
+                    <th class="py-2.5 px-4 text-right">LATENCY</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800/60">
+                  <tr class="hover:bg-slate-800/40 transition">
+                    <td class="py-2.5 px-4 text-slate-400">07:23:14 UTC</td>
+                    <td class="py-2.5 px-3 text-brand-400 font-medium">audiobookshelf</td>
+                    <td class="py-2.5 px-3">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">ERROR</span>
+                    </td>
+                    <td class="py-2.5 px-4 text-slate-200">Failed to connect to OpenLibrary scraper API: 504 Gateway Timeout</td>
+                    <td class="py-2.5 px-4 text-right text-rose-400">1420ms</td>
+                  </tr>
+                  <tr class="hover:bg-slate-800/40 transition">
+                    <td class="py-2.5 px-4 text-slate-400">07:23:14 UTC</td>
+                    <td class="py-2.5 px-3 text-brand-400 font-medium">audiobookshelf</td>
+                    <td class="py-2.5 px-3">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">WARN</span>
+                    </td>
+                    <td class="py-2.5 px-4 text-slate-200">Memory usage approaching threshold (480 MB / 512 MB)</td>
+                    <td class="py-2.5 px-4 text-right text-amber-400">32ms</td>
+                  </tr>
+                  <tr class="hover:bg-slate-800/40 transition">
+                    <td class="py-2.5 px-4 text-slate-400">07:22:57 UTC</td>
+                    <td class="py-2.5 px-3 text-brand-400 font-medium">audiobookshelf</td>
+                    <td class="py-2.5 px-3">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20">INFO</span>
+                    </td>
+                    <td class="py-2.5 px-4 text-slate-200">Production ingestion channel initialized on cPanel</td>
+                    <td class="py-2.5 px-4 text-right text-emerald-400">4ms</td>
+                  </tr>
+                  <tr class="hover:bg-slate-800/40 transition">
+                    <td class="py-2.5 px-4 text-slate-400">07:21:02 UTC</td>
+                    <td class="py-2.5 px-3 text-indigo-400 font-medium">auth-gateway</td>
+                    <td class="py-2.5 px-3">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20">INFO</span>
+                    </td>
+                    <td class="py-2.5 px-4 text-slate-200">User token refreshed successfully (HMAC-SHA256 verified)</td>
+                    <td class="py-2.5 px-4 text-right text-emerald-400">2ms</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Terminal Footer Controls -->
+            <div class="px-4 py-2.5 bg-slate-950/90 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+              <div class="flex items-center gap-2">
+                <span class="font-semibold text-slate-300">Quick Test Command:</span>
+                <code class="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-brand-400">curl -X POST https://logs.722411.xyz/api/v1/ingest/TOKEN -d '{"level":"INFO","msg":"ping"}'</code>
+              </div>
+              <a href="/dashboard" class="text-brand-400 hover:text-brand-300 flex items-center gap-1 font-semibold">
+                <span>View Full UI Drawer &rarr;</span>
+              </a>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- PROOF & HIGHLIGHTS GRID -->
+    <section class="border-y border-slate-200 dark:border-slate-800/80 bg-slate-100/60 dark:bg-slate-900/40 py-12">
+      <div class="max-w-7xl mx-auto px-6">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+          <div>
+            <div class="text-3xl font-extrabold text-slate-900 dark:text-white font-mono">0 KB</div>
+            <div class="text-xs font-semibold uppercase tracking-wider text-slate-500 mt-1">Vendor Bloat</div>
+            <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Pure PHP 8.1+ standard library</p>
+          </div>
+          <div>
+            <div class="text-3xl font-extrabold text-emerald-500 font-mono">&lt; 5ms</div>
+            <div class="text-xs font-semibold uppercase tracking-wider text-slate-500 mt-1">Ingest Latency</div>
+            <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Direct PDO prepared writes</p>
+          </div>
+          <div>
+            <div class="text-3xl font-extrabold text-brand-400 font-mono">100%</div>
+            <div class="text-xs font-semibold uppercase tracking-wider text-slate-500 mt-1">cPanel Native</div>
+            <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Zero resident daemons needed</p>
+          </div>
+          <div>
+            <div class="text-3xl font-extrabold text-indigo-400 font-mono">Dual</div>
+            <div class="text-xs font-semibold uppercase tracking-wider text-slate-500 mt-1">Ingest Auth</div>
+            <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">URL path token or HTTP Bearer</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CORE FEATURES SECTION -->
+    <section id="features" class="py-20 max-w-7xl mx-auto px-6">
+      <div class="max-w-2xl">
+        <h2 class="text-xs font-bold uppercase tracking-widest text-brand-500">Architecture & Capabilities</h2>
+        <p class="text-3xl font-extrabold text-slate-900 dark:text-white mt-2">Built for systems where daemons are a liability.</p>
+        <p class="text-sm text-slate-600 dark:text-slate-400 mt-2">Elasticsearch, Promtail, and Vector eat hundreds of megabytes of RAM. LogPulse runs on standard shared hosting with zero persistent memory footprint.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mt-12">
+        <!-- Feature 1 -->
+        <div class="p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 shadow-sm card-surface">
+          <div class="w-10 h-10 rounded-lg bg-brand-500/10 text-brand-400 border border-brand-500/20 flex items-center justify-center font-bold font-mono">
+            01
+          </div>
+          <h3 class="text-lg font-bold text-slate-900 dark:text-white mt-4">Project-Centric Isolation</h3>
+          <p class="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+            Organize telemetry by application (e.g. <code>Audiobookshelf</code>, <code>Nextcloud</code>, <code>Stripe Gateway</code>). Each project gets an independent high-entropy ingest token, custom retention schedule, and dedicated log stream.
+          </p>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 shadow-sm card-surface">
+          <div class="w-10 h-10 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center font-bold font-mono">
+            02
+          </div>
+          <h3 class="text-lg font-bold text-slate-900 dark:text-white mt-4">Real-Time AJAX Streaming</h3>
+          <p class="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+            Shared Apache servers terminate long-lived WebSockets and SSE connections after 30 seconds. LogPulse uses low-overhead, cursor-based short polling (1s-10s) with pause/resume controls that never drop.
+          </p>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 shadow-sm card-surface">
+          <div class="w-10 h-10 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 flex items-center justify-center font-bold font-mono">
+            03
+          </div>
+          <h3 class="text-lg font-bold text-slate-900 dark:text-white mt-4">Slide-Over Event Inspector</h3>
+          <p class="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+            Click any log row in the dashboard to slide out formatted JSON contexts, raw request bodies, caller IP addresses, user agents, and exact millisecond event timing.
+          </p>
+        </div>
+
+        <!-- Feature 4 -->
+        <div class="p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 shadow-sm card-surface">
+          <div class="w-10 h-10 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center font-bold font-mono">
+            04
+          </div>
+          <h3 class="text-lg font-bold text-slate-900 dark:text-white mt-4">Synthetic Health Pings</h3>
+          <p class="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+            Probe your public URLs or internal APIs on a schedule. Track HTTP status codes and response latency over time with visual health badges right on each project card.
+          </p>
+        </div>
+
+        <!-- Feature 5 -->
+        <div class="p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 shadow-sm card-surface">
+          <div class="w-10 h-10 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center justify-center font-bold font-mono">
+            05
+          </div>
+          <h3 class="text-lg font-bold text-slate-900 dark:text-white mt-4">Threshold Alert Engine</h3>
+          <p class="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+            Trigger notifications to Discord, Slack, custom HTTP webhooks, or email when the error count for an endpoint crosses your configured threshold in any sliding time window.
+          </p>
+        </div>
+
+        <!-- Feature 6 -->
+        <div class="p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 shadow-sm card-surface">
+          <div class="w-10 h-10 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20 flex items-center justify-center font-bold font-mono">
+            06
+          </div>
+          <h3 class="text-lg font-bold text-slate-900 dark:text-white mt-4">Cron-Driven Automation</h3>
+          <p class="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+            Background tasks (retention pruning, alert evaluation, uptime probes) run cleanly via a single standard cPanel cron command: <code>php bin/console cron:run</code>.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- CODE INTEGRATION SNIPPETS SECTION -->
+    <section id="snippets" class="border-t border-slate-200 dark:border-slate-800/80 bg-slate-100/50 dark:bg-slate-900/30 py-20">
+      <div class="max-w-7xl mx-auto px-6">
+        <div class="max-w-2xl">
+          <h2 class="text-xs font-bold uppercase tracking-widest text-brand-500">Developer First</h2>
+          <p class="text-3xl font-extrabold text-slate-900 dark:text-white mt-2">Send logs in 30 seconds from any stack.</p>
+          <p class="text-sm text-slate-600 dark:text-slate-400 mt-2">No proprietary SDKs required. Standard JSON over HTTP POST.</p>
+        </div>
+
+        <!-- Code Snippet Switcher Card -->
+        <div class="mt-8 rounded-xl border border-slate-800 bg-slate-950 shadow-xl overflow-hidden terminal-surface">
+          <!-- Snippet Tab Headers -->
+          <div class="flex items-center justify-between border-b border-slate-800 px-4 pt-3">
+            <div class="flex items-center gap-2">
+              <button @click="snippetTab = 'curl'" :class="snippetTab === 'curl' ? 'text-brand-400 border-b-2 border-brand-500 font-bold' : 'text-slate-400 hover:text-white'" class="px-3 pb-3 text-xs transition">
+                cURL (CLI)
+              </button>
+              <button @click="snippetTab = 'python'" :class="snippetTab === 'python' ? 'text-brand-400 border-b-2 border-brand-500 font-bold' : 'text-slate-400 hover:text-white'" class="px-3 pb-3 text-xs transition">
+                Python
+              </button>
+              <button @click="snippetTab = 'node'" :class="snippetTab === 'node' ? 'text-brand-400 border-b-2 border-brand-500 font-bold' : 'text-slate-400 hover:text-white'" class="px-3 pb-3 text-xs transition">
+                Node.js
+              </button>
+              <button @click="snippetTab = 'docker'" :class="snippetTab === 'docker' ? 'text-brand-400 border-b-2 border-brand-500 font-bold' : 'text-slate-400 hover:text-white'" class="px-3 pb-3 text-xs transition">
+                Docker Log Pipe
+              </button>
+            </div>
+            <button @click="copySnippet()" class="text-[11px] font-mono text-slate-400 hover:text-brand-400 flex items-center gap-1 pb-2 transition">
+              <span x-text="copied ? 'Copied!' : 'Copy Snippet'"></span>
+            </button>
+          </div>
+
+          <!-- Code Content -->
+          <div class="p-6 font-mono text-xs overflow-x-auto leading-relaxed text-slate-300">
+            <template x-if="snippetTab === 'curl'">
+              <pre><code>curl -X POST "https://logs.722411.xyz/api/v1/ingest/lp_your_token_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "level": "ERROR",
+    "message": "Payment gateway timeout on checkout",
+    "context": { "order_id": "ord_9921", "amount": 49.00 }
+  }'</code></pre>
+            </template>
+            <template x-if="snippetTab === 'python'">
+              <pre><code>import requests
+
+requests.post(
+    "https://logs.722411.xyz/api/v1/ingest/lp_your_token_here",
+    json={
+        "level": "WARN",
+        "message": "High memory consumption detected",
+        "context": {"mem_pct": 89}
+    },
+    timeout=5
+)</code></pre>
+            </template>
+            <template x-if="snippetTab === 'node'">
+              <pre><code>await fetch('https://logs.722411.xyz/api/v1/ingest/lp_your_token_here', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    level: 'INFO',
+    message: 'Worker execution completed',
+    context: { worker_id: 'pod-88a' }
+  })
+});</code></pre>
+            </template>
+            <template x-if="snippetTab === 'docker'">
+              <pre><code># Stream all container output directly to your LogPulse endpoint:
+docker logs -f my_container 2>&1 | while read -r line; do
+  curl -s -X POST "https://logs.722411.xyz/api/v1/ingest/lp_your_token_here" \
+    -H "Content-Type: application/json" \
+    -d "{\"level\": \"INFO\", \"message\": \"$line\"}" > /dev/null
+done</code></pre>
+            </template>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CALL TO ACTION BANNER -->
+    <section class="py-20 max-w-7xl mx-auto px-6 text-center">
+      <div class="p-10 md:p-14 rounded-2xl bg-gradient-to-b from-slate-900 to-slate-950 border border-slate-800 relative overflow-hidden shadow-2xl">
+        <div class="absolute -top-24 left-1/2 -translate-x-1/2 w-96 h-48 bg-brand-500/20 blur-[100px] pointer-events-none"></div>
+
+        <h2 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight">
+          Ready to monitor your self-hosted services?
+        </h2>
+        <p class="text-slate-400 text-sm max-w-xl mx-auto mt-3">
+          Deploy to any shared cPanel hosting account or VPS in under two minutes. Zero dependencies, instant setup.
+        </p>
+
+        <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <a href="/login" class="bg-brand-500 hover:bg-brand-600 text-slate-950 font-semibold text-sm px-6 py-2.5 rounded-lg transition shadow-md">
+            Sign In to Console
+          </a>
+          <a href="/docs" class="px-5 py-2.5 rounded-lg border border-slate-700 bg-slate-900 text-sm font-medium text-slate-300 hover:text-white transition">
+            View REST Documentation
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="border-t border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-950 py-10 px-6 text-xs text-slate-500">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-2">
+        <span class="font-bold text-slate-900 dark:text-white">LogPulse</span>
+        <span>&mdash;</span>
+        <span>Open Source MIT License &bull; Zero-Dependency Observability</span>
+      </div>
+
+      <div class="flex items-center gap-6">
+        <a href="/docs" class="hover:text-brand-400 transition">REST API</a>
+        <a href="/dashboard" class="hover:text-brand-400 transition">Dashboard</a>
+        <a href="https://github.com/aaxyat/LogPulse" target="_blank" class="hover:text-brand-400 transition">GitHub</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    function landingApp() {
+      return {
+        themeMode: localStorage.getItem('lp_theme') || 'system',
+        snippetTab: 'curl',
+        copied: false,
+
+        cycleTheme() {
+          if (this.themeMode === 'system') {
+            this.themeMode = 'light';
+          } else if (this.themeMode === 'light') {
+            this.themeMode = 'dark';
+          } else {
+            this.themeMode = 'system';
+          }
+          localStorage.setItem('lp_theme', this.themeMode);
+          this.applyTheme(this.themeMode);
+        },
+
+        applyTheme(mode) {
+          const isDark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        },
+
+        copySnippet() {
+          let text = '';
+          if (this.snippetTab === 'curl') {
+            text = `curl -X POST "https://logs.722411.xyz/api/v1/ingest/lp_your_token_here" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "level": "ERROR",\n    "message": "Payment gateway timeout on checkout",\n    "context": { "order_id": "ord_9921", "amount": 49.00 }\n  }'`;
+          } else if (this.snippetTab === 'python') {
+            text = `import requests\n\nrequests.post(\n    "https://logs.722411.xyz/api/v1/ingest/lp_your_token_here",\n    json={\n        "level": "WARN",\n        "message": "High memory consumption detected",\n        "context": {"mem_pct": 89}\n    },\n    timeout=5\n)`;
+          } else if (this.snippetTab === 'node') {
+            text = `await fetch('https://logs.722411.xyz/api/v1/ingest/lp_your_token_here', {\n  method: 'POST',\n  headers: { 'Content-Type': 'application/json' },\n  body: JSON.stringify({\n    level: 'INFO',\n    message: 'Worker execution completed',\n    context: { worker_id: 'pod-88a' }\n  })\n});`;
+          } else if (this.snippetTab === 'docker') {
+            text = `docker logs -f my_container 2>&1 | while read -r line; do\n  curl -s -X POST "https://logs.722411.xyz/api/v1/ingest/lp_your_token_here" \\\n    -H "Content-Type: application/json" \\\n    -d "{\\"level\\": \\"INFO\\", \\"message\\": \\"$line\\"}" > /dev/null\ndone`;
+          }
+          navigator.clipboard.writeText(text);
+          this.copied = true;
+          setTimeout(() => this.copied = false, 2000);
+        }
+      }
+    }
+  </script>
+</body>
+</html>
