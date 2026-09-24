@@ -1,5 +1,7 @@
 # Environment & Secrets
 config/config.php
+config/config.enc
+config/.master_key
 .env
 .env.*
 

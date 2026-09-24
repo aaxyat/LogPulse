@@ -98,7 +98,14 @@ class Router
         // If web request, route appropriately
         http_response_code(200);
         header('Content-Type: text/html; charset=UTF-8');
-        if ($uri === '/' || $uri === '') {
+        $isConfigured = \LogPulse\Services\ConfigVault::isConfigured();
+
+        if ($uri === '/setup') {
+            require dirname(__DIR__) . '/public/assets/setup.html';
+        } elseif (!$isConfigured) {
+            header('Location: /setup');
+            exit;
+        } elseif ($uri === '/' || $uri === '') {
             require dirname(__DIR__) . '/public/assets/landing.html';
         } elseif ($uri === '/docs') {
             require dirname(__DIR__) . '/public/assets/docs.html';

@@ -10,22 +10,55 @@ require_once dirname(__DIR__) . '/src/Database/DB.php';
 require_once dirname(__DIR__) . '/src/Services/RetentionService.php';
 require_once dirname(__DIR__) . '/src/Services/AlertService.php';
 require_once dirname(__DIR__) . '/src/Services/UptimeService.php';
+require_once dirname(__DIR__) . '/src/Services/ConfigVault.php';
+require_once dirname(__DIR__) . '/src/Services/MailService.php';
 
 use LogPulse\Database\DB;
 use LogPulse\Services\RetentionService;
 use LogPulse\Services\AlertService;
 use LogPulse\Services\UptimeService;
+use LogPulse\Services\ConfigVault;
+use LogPulse\Services\MailService;
 
-$configPath = dirname(__DIR__) . '/config/config.php';
-if (!file_exists($configPath)) {
-    $configPath = dirname(__DIR__) . '/config/config.example.php';
+$config = ConfigVault::load();
+if (empty($config)) {
+    $configPath = dirname(__DIR__) . '/config/config.php';
+    if (!file_exists($configPath)) {
+        $configPath = dirname(__DIR__) . '/config/config.example.php';
+    }
+    $config = require $configPath;
 }
-$config = require $configPath;
-DB::init($config['database']);
-
+if (!empty($config['database']) && !empty($config['database']['driver'])) {
+    DB::init($config['database']);
+}
 $command = $argv[1] ?? 'help';
 
 switch ($command) {
+    case 'mail:test':
+        $recipient = $argv[2] ?? ($config['mail']['username'] ?? 'admin@722411.xyz');
+        echo "==> Testing transactional SMTP email via {$config['mail']['username']} to {$recipient}...\n";
+        $html = MailService::buildTemplate(
+            'CLI SMTP Verification',
+            '<p>This email was dispatched via LogPulse CLI console runner on cPanel.</p>',
+            'https://logs.722411.xyz',
+            'Open LogPulse Console',
+            [['text' => 'CLI VERIFIED', 'color' => '#34d399', 'bg' => 'rgba(52, 211, 153, 0.15)']]
+        );
+        $ok = MailService::send($recipient, 'LogPulse CLI Test Message', $html);
+        if ($ok) {
+            echo "✅ Email successfully delivered to {$recipient}!\n";
+        } else {
+            echo "❌ Email delivery failed: " . (MailService::getLastError() ?? 'Unknown error') . "\n";
+        }
+        break;
+
+    case 'vault:encrypt':
+        echo "==> Encrypting current configuration with AES-256-GCM...\n";
+        $key = ConfigVault::getMasterKey() ?? ConfigVault::generateMasterKey();
+        ConfigVault::save($config, $key);
+        echo "✅ Configuration encrypted into config/config.enc\n";
+        echo "🔑 Master Key: {$key}\n";
+        break;
     case 'migrate':
         echo "==> Running LogPulse database migrations...\n";
         $driver = $config['database']['driver'] ?? 'mysql';

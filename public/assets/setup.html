@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LogPulse — System Installation & Encrypted Setup</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/logo-icon.svg">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Alpine.js CDN -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              400: '#38bdf8',
+              500: '#0ea5e9',
+              600: '#0284c7',
+            },
+            slate: {
+              850: '#111827',
+              900: '#0b0f19',
+              950: '#06090f',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Menlo', 'Monaco', 'Courier New', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Theme initialization script -->
+  <script>
+    (function() {
+      function getPreferredTheme() {
+        const stored = localStorage.getItem('lp_theme');
+        if (stored === 'light' || stored === 'dark') return stored;
+        return 'system';
+      }
+      function updateTheme(theme) {
+        const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (isDark) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      }
+      const initial = getPreferredTheme();
+      updateTheme(initial);
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        if ((localStorage.getItem('lp_theme') || 'system') === 'system') {
+          updateTheme('system');
+        }
+      });
+    })();
+  </script>
+
+  <style>
+    [x-cloak] { display: none !important; }
+    html.dark, html.dark body {
+      background-color: #06090f !important;
+      color: #f1f5f9 !important;
+    }
+    html:not(.dark), html:not(.dark) body {
+      background-color: #f8fafc !important;
+      color: #0f172a !important;
+    }
+    html:not(.dark) .setup-card {
+      background-color: #ffffff !important;
+      border-color: #e2e8f0 !important;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03) !important;
+    }
+    html:not(.dark) .setup-card input, html:not(.dark) .setup-card select {
+      background-color: #f8fafc !important;
+      border-color: #cbd5e1 !important;
+      color: #0f172a !important;
+    }
+    html:not(.dark) .setup-card input::placeholder {
+      color: #94a3b8 !important;
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    .dark ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen flex flex-col justify-between selection:bg-brand-500/20 selection:text-brand-400" x-data="setupWizard()" x-init="init()" x-cloak>
+
+  <!-- Top Simple Brand Strip -->
+  <header class="border-b border-slate-200 dark:border-slate-800/80 bg-white/80 dark:bg-slate-900/70 backdrop-blur-md px-6 py-3.5 transition-colors">
+    <div class="max-w-4xl mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <img src="/assets/logo-icon.svg" class="h-8 w-8 rounded-lg shadow-sm" alt="LogPulse">
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-base tracking-tight text-slate-900 dark:text-white">Log<span class="bg-gradient-to-r from-brand-500 to-emerald-500 dark:from-brand-400 dark:to-emerald-400 bg-clip-text text-transparent">Pulse</span></span>
+          <span class="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-brand-500/10 text-brand-600 dark:text-brand-400 border border-brand-500/20 font-bold">SETUP WIZARD</span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button @click="cycleTheme()" class="p-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs text-slate-600 dark:text-slate-300 hover:text-brand-500 transition shadow-sm" title="Toggle theme">
+          <template x-if="themeMode === 'system'">
+            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+          </template>
+          <template x-if="themeMode === 'light'">
+            <svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+          </template>
+          <template x-if="themeMode === 'dark'">
+            <svg class="w-3.5 h-3.5 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+          </template>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Wizard Container -->
+  <main class="flex-1 max-w-4xl w-full mx-auto px-6 py-8 md:py-12">
+
+    <!-- Already Configured Banner -->
+    <template x-if="isConfigured">
+      <div class="setup-card bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center max-w-lg mx-auto shadow-2xl">
+        <div class="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto mb-4">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+        </div>
+        <h2 class="text-xl font-bold text-slate-900 dark:text-white">System Already Installed</h2>
+        <p class="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+          LogPulse is active and encrypted with AES-256-GCM. The initial setup wizard has been locked for security.
+        </p>
+        <div class="mt-6 flex justify-center gap-3">
+          <a href="/login" class="bg-brand-500 hover:bg-brand-600 text-slate-950 font-semibold text-xs px-5 py-2.5 rounded-lg transition shadow-md">
+            Go to Login &rarr;
+          </a>
+          <a href="/dashboard" class="border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs px-4 py-2.5 rounded-lg transition">
+            Dashboard
+          </a>
+        </div>
+      </div>
+    </template>
+
+    <!-- Interactive Setup Steps -->
+    <template x-if="!isConfigured">
+      <div>
+        
+        <!-- Step Progress Tracker -->
+        <div class="mb-8">
+          <div class="flex items-center justify-between max-w-2xl mx-auto relative">
+            <div class="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-200 dark:bg-slate-800 -translate-y-1/2 -z-0"></div>
+            
+            <!-- Step 1 -->
+            <button @click="setStep(1)" :class="step >= 1 ? 'border-brand-500 bg-brand-500 text-slate-950 font-bold' : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500'" class="w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs relative z-10 transition">
+              1
+            </button>
+            <!-- Step 2 -->
+            <button @click="setStep(2)" :class="step >= 2 ? 'border-brand-500 bg-brand-500 text-slate-950 font-bold' : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500'" class="w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs relative z-10 transition">
+              2
+            </button>
+            <!-- Step 3 -->
+            <button @click="setStep(3)" :class="step >= 3 ? 'border-brand-500 bg-brand-500 text-slate-950 font-bold' : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500'" class="w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs relative z-10 transition">
+              3
+            </button>
+            <!-- Step 4 -->
+            <button @click="setStep(4)" :class="step >= 4 ? 'border-brand-500 bg-brand-500 text-slate-950 font-bold' : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500'" class="w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs relative z-10 transition">
+              4
+            </button>
+            <!-- Step 5 -->
+            <button @click="setStep(5)" :class="step >= 5 ? 'border-brand-500 bg-brand-500 text-slate-950 font-bold' : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500'" class="w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs relative z-10 transition">
+              5
+            </button>
+          </div>
+          <div class="flex items-center justify-between max-w-2xl mx-auto text-[11px] font-medium text-slate-500 mt-2 px-1 text-center">
+            <span :class="step === 1 ? 'text-brand-500 font-bold' : ''">Pre-flight</span>
+            <span :class="step === 2 ? 'text-brand-500 font-bold' : ''">Database</span>
+            <span :class="step === 3 ? 'text-brand-500 font-bold' : ''">SMTP Mail</span>
+            <span :class="step === 4 ? 'text-brand-500 font-bold' : ''">Admin User</span>
+            <span :class="step === 5 ? 'text-brand-500 font-bold' : ''">Encryption</span>
+          </div>
+        </div>
+
+        <!-- Wizard Card -->
+        <div class="setup-card bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 shadow-2xl relative overflow-hidden transition-colors">
+          <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-brand-500 via-emerald-400 to-indigo-500"></div>
+
+          <!-- STEP 1: Pre-flight Diagnostics -->
+          <div x-show="step === 1" class="space-y-6">
+            <div>
+              <h2 class="text-xl font-bold text-slate-900 dark:text-white">System Diagnostics & Requirements</h2>
+              <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                LogPulse verifies that your server environment meets all runtime prerequisites.
+              </p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <template x-for="(check, key) in checks" :key="key">
+                <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800/80 bg-slate-50 dark:bg-slate-950/60 flex items-center justify-between">
+                  <div>
+                    <div class="text-xs font-semibold text-slate-900 dark:text-white" x-text="check.name"></div>
+                    <div class="text-[11px] text-slate-500" x-text="check.current"></div>
+                  </div>
+                  <div>
+                    <template x-if="check.passed">
+                      <span class="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                        &check; Pass
+                      </span>
+                    </template>
+                    <template x-if="!check.passed">
+                      <span class="inline-flex items-center gap-1 text-[11px] font-bold text-rose-500 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
+                        &cross; Failed
+                      </span>
+                    </template>
+                  </div>
+                </div>
+              </template>
+            </div>
+
+            <div class="flex justify-end pt-4 border-t border-slate-200 dark:border-slate-800">
+              <button @click="step = 2" class="bg-brand-500 hover:bg-brand-600 text-slate-950 font-semibold text-xs px-5 py-2.5 rounded-lg transition shadow-md flex items-center gap-1.5">
+                <span>Continue to Database</span>
+                <span>&rarr;</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- STEP 2: Database Setup -->
+          <div x-show="step === 2" class="space-y-6">
+            <div>
+              <h2 class="text-xl font-bold text-slate-900 dark:text-white">Database Configuration</h2>
+              <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                Configure your cPanel MySQL / MariaDB database. Stored encrypted with AES-256-GCM.
+              </p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Database Driver</label>
+                <select x-model="form.database.driver" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white outline-none">
+                  <option value="mysql">MySQL / MariaDB (Recommended for cPanel)</option>
+                  <option value="sqlite">SQLite (File-based)</option>
+                </select>
+              </div>
+
+              <div x-show="form.database.driver === 'mysql'">
+                <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Database Host</label>
+                <input type="text" x-model="form.database.host" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white outline-none" placeholder="127.0.0.1">
+              </div>
+
+              <div x-show="form.database.driver === 'mysql'">
+                <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Database Name</label>
+                <input type="text" x-model="form.database.database" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white outline-none" placeholder="ayushbco_logpulse">
+              </div>
+
+              <div x-show="form.database.driver === 'mysql'">
+                <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Database Port</label>
+                <input type="number" x-model.number="form.database.port" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white outline-none" placeholder="3306">
+              </div>
+
+              <div x-show="form.database.driver === 'mysql'">
+                <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Username</label>
+                <input type="text" x-model="form.database.username" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white outline-none" placeholder="ayushbco_loguser">
+              </div>
+
+              <div x-show="form.database.driver === 'mysql'">
+                <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Password</label>
+                <input type="password" x-model="form.database.password" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white outline-none" placeholder="Enter DB Password">
+              </div>
+            </div>
+
+            <!-- Test DB Action Button & Feedback -->
+            <div class="flex items-center gap-3">
+              <button @click="testDatabase()" :disabled="dbTesting" class="border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-semibold px-4 py-2 rounded-lg text-slate-800 dark:text-slate-200 transition flex items-center gap-1.5">
+                <span x-show="!dbTesting">Test Connection</span>
+                <span x-show="dbTesting">Testing...</span>
+              </button>
+              <div x-show="dbMessage" class="text-xs font-medium" :class="dbSuccess ? 'text-emerald-500' : 'text-rose-500'" x-text="dbMessage"></div>
+            </div>
+
+            <div class="flex justify-between pt-4 border-t border-slate-200 dark:border-slate-800">
+              <button @click="step = 1" class="text-xs text-slate-500 hover:text-slate-300 transition">&larr; Back</button>
+              <button @click="step = 3" class="bg-brand-500 hover:bg-brand-600 text-slate-950 font-semibold text-xs px-5 py-2.5 rounded-lg transition shadow-md flex items-center gap-1.5">
+                <span>Continue to Mail Setup</span>
+                <span>&rarr;</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- STEP 3: Transactional Mail Setup -->
+          <div x-show="step === 3" class="space-y-6">
+            <div>
+              <h2 class="text-xl font-bold text-slate-900 dark:text-white">Transactional Mail (SMTP)</h2>
+              <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                Configure your no-reply transactional email (<code>dontreply@722411.xyz</code>).
+              </p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">SMTP Host</label>
+                <input type="text" x-model="form.mail.host" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white outline-none" placeholder="mail.722411.xyz">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">SMTP Port & Protocol</label>
+                <div class="grid grid-cols-2 gap-2">
+                  <input type="number" x-model.number="form.mail.port" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white outline-none" placeholder="465">
+                  <select x-model="form.mail.encryption" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white outline-none">
+                    <option value="ssl">SSL / SMTPS (465)</option>
+                    <option value="tls">STARTTLS (587)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">SMTP Username / Email</label>
+                <input type="email" x-model="form.mail.username" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white outline-none" placeholder="dontreply@722411.xyz">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">SMTP Password</label>
+                <input type="password" x-model="form.mail.password" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white outline-none" placeholder="Enter SMTP password">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">From Name</label>
+                <input type="text" x-model="form.mail.from_name" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white outline-none" placeholder="LogPulse">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Send Test Email To</label>
+                <input type="email" x-model="testRecipient" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white outline-none" placeholder="your_email@domain.com">
+              </div>
+            </div>
+
+            <!-- Test SMTP Action Button -->
+            <div class="flex items-center gap-3">
+              <button @click="testMail()" :disabled="mailTesting" class="border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-semibold px-4 py-2 rounded-lg text-slate-800 dark:text-slate-200 transition flex items-center gap-1.5">
+                <span x-show="!mailTesting">Send Verification Mail</span>
+                <span x-show="mailTesting">Sending...</span>
+              </button>
+              <div x-show="mailMessage" class="text-xs font-medium" :class="mailSuccess ? 'text-emerald-500' : 'text-rose-500'" x-text="mailMessage"></div>
+            </div>
+
+            <div class="flex justify-between pt-4 border-t border-slate-200 dark:border-slate-800">
+              <button @click="step = 2" class="text-xs text-slate-500 hover:text-slate-300 transition">&larr; Back</button>
+              <button @click="step = 4" class="bg-brand-500 hover:bg-brand-600 text-slate-950 font-semibold text-xs px-5 py-2.5 rounded-lg transition shadow-md flex items-center gap-1.5">
+                <span>Continue to Admin Account</span>
+                <span>&rarr;</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- STEP 4: Admin Account Setup -->
+          <div x-show="step === 4" class="space-y-6">
+            <div>
+              <h2 class="text-xl font-bold text-slate-900 dark:text-white">Primary Administrator Account</h2>
+              <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                Create the master administrator login for your LogPulse console.
+              </p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Full Name</label>
+                <input type="text" x-model="form.admin.name" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white outline-none" placeholder="Ayush Lead SRE">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Email Address</label>
+                <input type="email" x-model="form.admin.email" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white outline-none" placeholder="admin@domain.com">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Password</label>
+                <input type="password" x-model="form.admin.password" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white outline-none" placeholder="Enter secure password">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Confirm Password</label>
+                <input type="password" x-model="form.admin.confirm_password" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white outline-none" placeholder="Repeat password">
+              </div>
+            </div>
+
+            <div class="flex justify-between pt-4 border-t border-slate-200 dark:border-slate-800">
+              <button @click="step = 3" class="text-xs text-slate-500 hover:text-slate-300 transition">&larr; Back</button>
+              <button @click="step = 5" class="bg-brand-500 hover:bg-brand-600 text-slate-950 font-semibold text-xs px-5 py-2.5 rounded-lg transition shadow-md flex items-center gap-1.5">
+                <span>Continue to Encryption & Install</span>
+                <span>&rarr;</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- STEP 5: Master Encryption Key & Final Install -->
+          <div x-show="step === 5" class="space-y-6">
+            <div>
+              <h2 class="text-xl font-bold text-slate-900 dark:text-white">Master Encryption Key & Initialization</h2>
+              <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                LogPulse will encrypt your entire configuration using AES-256-GCM. Save this key in your password manager!
+              </p>
+            </div>
+
+            <!-- Master Key Card -->
+            <div class="p-4 rounded-xl border border-brand-500/30 bg-brand-500/5">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-semibold uppercase tracking-wider text-brand-400">256-Bit Master Encryption Key</span>
+                <button @click="copyKey()" class="text-xs font-mono text-brand-400 hover:text-brand-300 transition">
+                  <span x-text="keyCopied ? 'Copied to Clipboard!' : 'Copy Key'"></span>
+                </button>
+              </div>
+              <div class="font-mono text-xs text-slate-900 dark:text-slate-200 bg-white dark:bg-slate-950/80 p-3 rounded-lg border border-slate-300 dark:border-slate-800 select-all break-all shadow-sm" x-text="form.master_key"></div>
+              <p class="text-[11px] text-slate-500 mt-2">
+                This key is stored with <code>0600</code> permissions in <code>config/.master_key</code>. If migrating servers, this key decrypts <code>config/config.enc</code>.
+              </p>
+            </div>
+
+            <!-- Summary Table -->
+            <div class="text-xs divide-y divide-slate-200 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden font-mono shadow-sm">
+              <div class="px-3.5 py-2 flex justify-between bg-slate-50 dark:bg-slate-950/40">
+                <span class="text-slate-500 dark:text-slate-400">Database:</span>
+                <span class="text-slate-800 dark:text-slate-200 font-semibold" x-text="form.database.driver === 'mysql' ? (form.database.database + ' @ ' + form.database.host) : 'SQLite'"></span>
+              </div>
+              <div class="px-3.5 py-2 flex justify-between bg-slate-50 dark:bg-slate-950/40">
+                <span class="text-slate-500 dark:text-slate-400">SMTP Server:</span>
+                <span class="text-slate-800 dark:text-slate-200 font-semibold" x-text="form.mail.host + ':' + form.mail.port + ' (' + form.mail.username + ')'"></span>
+              </div>
+              <div class="px-3.5 py-2 flex justify-between bg-slate-50 dark:bg-slate-950/40">
+                <span class="text-slate-500 dark:text-slate-400">Admin Account:</span>
+                <span class="text-slate-800 dark:text-slate-200 font-semibold" x-text="form.admin.email"></span>
+              </div>
+              <div class="px-3.5 py-2 flex justify-between bg-slate-50 dark:bg-slate-950/40">
+                <span class="text-slate-500 dark:text-slate-400">Security Vault:</span>
+                <span class="text-emerald-600 dark:text-emerald-400 font-bold">AES-256-GCM (Zero Plaintext .env)</span>
+              </div>
+            </div>
+
+            <div x-show="installError" class="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs rounded-lg" x-text="installError"></div>
+
+            <div class="flex justify-between pt-4 border-t border-slate-200 dark:border-slate-800">
+              <button @click="step = 4" class="text-xs text-slate-500 hover:text-slate-300 transition">&larr; Back</button>
+              <button @click="install()" :disabled="installing" class="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-slate-950 font-bold text-xs px-6 py-2.5 rounded-lg transition shadow-md flex items-center gap-2">
+                <span x-show="!installing">Encrypt & Initialize LogPulse</span>
+                <span x-show="installing">Installing & Migrating Schema...</span>
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </template>
+
+  </main>
+
+  <!-- Simple Footer -->
+  <footer class="border-t border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-950 py-6 px-6 text-center text-xs text-slate-500 transition-colors">
+    <p>LogPulse &mdash; Zero-Dependency Pure PHP 8.1+ Observability &bull; AES-256-GCM Encrypted</p>
+  </footer>
+
+  <script>
+    function setupWizard() {
+      return {
+        themeMode: localStorage.getItem('lp_theme') || 'system',
+        step: 1,
+        isConfigured: false,
+        checks: {},
+        dbTesting: false,
+        dbSuccess: false,
+        dbMessage: '',
+        mailTesting: false,
+        mailSuccess: false,
+        mailMessage: '',
+        installing: false,
+        installError: '',
+        keyCopied: false,
+        testRecipient: 'admin@722411.xyz',
+
+        form: {
+          app_name: 'LogPulse',
+          app_url: window.location.origin,
+          timezone: 'UTC',
+          master_key: '',
+          database: {
+            driver: 'mysql',
+            host: '127.0.0.1',
+            port: 3306,
+            database: 'ayushbco_logpulse',
+            username: 'ayushbco_loguser',
+            password: ''
+          },
+          mail: {
+            host: 'mail.722411.xyz',
+            port: 465,
+            encryption: 'ssl',
+            username: 'dontreply@722411.xyz',
+            password: 'LpMail_P397ZTigLa9NXIj3!26',
+            from_name: 'LogPulse'
+          },
+          admin: {
+            name: 'Ayush Lead SRE',
+            email: 'admin@722411.xyz',
+            password: '',
+            confirm_password: ''
+          }
+        },
+
+        async init() {
+          try {
+            const res = await fetch('/api/v1/setup/check');
+            const data = await res.json();
+            if (data.success) {
+              this.isConfigured = data.is_configured;
+              this.checks = data.checks;
+              if (data.suggested_key) {
+                this.form.master_key = data.suggested_key;
+              }
+            }
+          } catch (e) {
+            console.error('Failed to run diagnostics:', e);
+          }
+        },
+
+        setStep(s) {
+          this.step = s;
+        },
+
+        cycleTheme() {
+          if (this.themeMode === 'system') this.themeMode = 'light';
+          else if (this.themeMode === 'light') this.themeMode = 'dark';
+          else this.themeMode = 'system';
+          localStorage.setItem('lp_theme', this.themeMode);
+          const isDark = this.themeMode === 'dark' || (this.themeMode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (isDark) document.documentElement.classList.add('dark');
+          else document.documentElement.classList.remove('dark');
+        },
+
+        async testDatabase() {
+          this.dbTesting = true;
+          this.dbMessage = '';
+          try {
+            const res = await fetch('/api/v1/setup/test-db', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(this.form.database)
+            });
+            const data = await res.json();
+            this.dbSuccess = data.success;
+            this.dbMessage = data.message || data.error;
+          } catch (e) {
+            this.dbSuccess = false;
+            this.dbMessage = 'Network error while testing database';
+          } finally {
+            this.dbTesting = false;
+          }
+        },
+
+        async testMail() {
+          this.mailTesting = true;
+          this.mailMessage = '';
+          try {
+            const payload = {
+              ...this.form.mail,
+              test_recipient: this.testRecipient || this.form.mail.username
+            };
+            const res = await fetch('/api/v1/setup/test-mail', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            this.mailSuccess = data.success;
+            this.mailMessage = data.message || data.error;
+          } catch (e) {
+            this.mailSuccess = false;
+            this.mailMessage = 'Network error while testing mail';
+          } finally {
+            this.mailTesting = false;
+          }
+        },
+
+        copyKey() {
+          navigator.clipboard.writeText(this.form.master_key);
+          this.keyCopied = true;
+          setTimeout(() => this.keyCopied = false, 2500);
+        },
+
+        async install() {
+          if (this.form.admin.password !== this.form.admin.confirm_password) {
+            this.installError = 'Admin passwords do not match!';
+            return;
+          }
+          if (this.form.admin.password.length < 8) {
+            this.installError = 'Admin password must be at least 8 characters.';
+            return;
+          }
+
+          this.installing = true;
+          this.installError = '';
+
+          try {
+            const res = await fetch('/api/v1/setup/install', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(this.form)
+            });
+            const data = await res.json();
+            if (data.success) {
+              window.location.href = '/login?installed=1';
+            } else {
+              this.installError = data.error || 'Installation failed.';
+            }
+          } catch (e) {
+            this.installError = 'Network error during installation.';
+          } finally {
+            this.installing = false;
+          }
+        }
+      }
+    }
+  </script>
+</body>
+</html>

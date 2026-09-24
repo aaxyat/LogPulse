@@ -31,16 +31,27 @@ use LogPulse\Controllers\LogController;
 use LogPulse\Controllers\MetricsController;
 use LogPulse\Controllers\ProjectController;
 use LogPulse\Controllers\SnippetController;
+use LogPulse\Controllers\SetupController;
 use LogPulse\Controllers\UptimeController;
 use LogPulse\Database\DB;
 use LogPulse\Router;
+use LogPulse\Services\ConfigVault;
 
-// Load Config
-$configPath = dirname(__DIR__) . '/config/config.php';
-if (!file_exists($configPath)) {
-    $configPath = dirname(__DIR__) . '/config/config.example.php';
+// Load Config from Encrypted Vault (fallback to legacy config.php if present)
+$isConfigured = ConfigVault::isConfigured();
+$config = ConfigVault::load();
+if (empty($config)) {
+    $config = [
+        'app' => [
+            'name' => 'LogPulse',
+            'env' => 'production',
+            'url' => 'https://logs.722411.xyz',
+            'jwt_secret' => 'unconfigured_setup_temp_key',
+            'timezone' => 'UTC'
+        ],
+        'cors' => ['allowed_origins' => ['*']]
+    ];
 }
-$config = require $configPath;
 
 // Set Timezone & Error Reporting
 date_default_timezone_set($config['app']['timezone'] ?? 'UTC');
@@ -52,9 +63,14 @@ if (($config['app']['env'] ?? 'production') === 'development') {
     error_reporting(0);
 }
 
-// Initialize Database connection
-DB::init($config['database']);
-
+// Initialize Database connection if configured
+if (!empty($config['database']) && !empty($config['database']['driver'])) {
+    try {
+        DB::init($config['database']);
+    } catch (\Throwable $e) {
+        error_log("[LogPulse DB Init Warning] " . $e->getMessage());
+    }
+}
 // Setup Router
 $router = new Router($config['cors'] ?? []);
 $jwtSecret = $config['app']['jwt_secret'];
@@ -62,6 +78,34 @@ $jwtSecret = $config['app']['jwt_secret'];
 // Middleware closures
 $authMw = fn(&$ctx) => ['user' => AuthMiddleware::requireAuth($jwtSecret)];
 $adminMw = fn(&$ctx) => ['user' => AuthMiddleware::requireAdmin($jwtSecret)];
+
+// -------------------------------------------------------------
+// Setup Wizard Routes (Public)
+// -------------------------------------------------------------
+$router->get('/setup', function () {
+    header('Content-Type: text/html; charset=UTF-8');
+    require dirname(__DIR__) . '/public/assets/setup.html';
+});
+
+$router->get('/api/v1/setup/check', function () {
+    header('Content-Type: application/json');
+    SetupController::check();
+});
+
+$router->post('/api/v1/setup/test-db', function () {
+    header('Content-Type: application/json');
+    SetupController::testDatabase();
+});
+
+$router->post('/api/v1/setup/test-mail', function () {
+    header('Content-Type: application/json');
+    SetupController::testMail();
+});
+
+$router->post('/api/v1/setup/install', function () {
+    header('Content-Type: application/json');
+    SetupController::install();
+});
 
 // -------------------------------------------------------------
 // Web Frontend Routes

@@ -51,3 +51,13 @@ _Avoid_: Synthetic check, health pinger, heartbeat, watcher
 **Check Run**:
 A single execution result of an Uptime Monitor recording timestamp, HTTP status code, response time in milliseconds, and status.
 _Avoid_: Ping result, probe execution, heartbeat sample
+
+### Security & Infrastructure
+
+**Config Vault**:
+An encrypted storage mechanism protecting database and SMTP credentials at rest using AES-256-GCM authenticated encryption, eliminating plaintext `.env` files.
+_Avoid_: Secret store, env manager, credentials file
+
+**Setup Wizard**:
+An interactive pre-flight installation workflow executing diagnostics, testing database/SMTP connectivity, encrypting credentials, and provisioning the initial Administrator.
+_Avoid_: Installer, onboarding form, setup script

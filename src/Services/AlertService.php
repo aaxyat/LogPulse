@@ -209,12 +209,30 @@ class AlertService
 
     private static function sendEmail(string $to, string $subject, string $message, array $samples): bool
     {
-        $body = $message . "\n\nRecent Errors:\n";
-        foreach ($samples as $s) {
-            $body .= "[{$s['level']}] {$s['created_at']}: {$s['message']}\n";
+        $sampleHtml = '';
+        $sampleText = '';
+        if (!empty($samples)) {
+            $sampleHtml .= '<div style="margin-top: 16px; border: 1px solid #334155; border-radius: 6px; overflow: hidden; font-family: monospace; font-size: 12px;">';
+            $sampleHtml .= '<div style="background: #0f172a; padding: 6px 12px; color: #94a3b8; font-weight: bold; border-bottom: 1px solid #334155;">RECENT ERROR SAMPLES</div>';
+            $sampleHtml .= '<div style="background: #020617; padding: 12px; color: #f87171;">';
+            foreach ($samples as $s) {
+                $safeMsg = htmlspecialchars($s['message']);
+                $sampleHtml .= "<div style=\"margin-bottom: 8px;\"><span style=\"color: #fb7185;\">[{$s['level']}]</span> <span style=\"color: #64748b;\">{$s['created_at']}</span>: {$safeMsg}</div>";
+                $sampleText .= "[{$s['level']}] {$s['created_at']}: {$s['message']}\n";
+            }
+            $sampleHtml .= '</div></div>';
         }
-        $headers = 'From: LogPulse <noreply@' . ($_SERVER['SERVER_NAME'] ?? 'localhost') . ">\r\n" .
-                   'X-Mailer: PHP/' . phpversion();
-        return @mail($to, $subject, $body, $headers);
+
+        $contentHtml = "<p style=\"color: #f1f5f9; font-size: 14px;\">{$message}</p>{$sampleHtml}";
+        $html = MailService::buildTemplate(
+            $subject,
+            $contentHtml,
+            'https://logs.722411.xyz/dashboard',
+            'Open LogPulse Console',
+            [['text' => 'CRITICAL ALERT', 'color' => '#fb7185', 'bg' => 'rgba(251, 113, 133, 0.15)']]
+        );
+
+        $text = "{$subject}\n\n{$message}\n\nRecent Errors:\n{$sampleText}\n\nView Dashboard: https://logs.722411.xyz/dashboard";
+        return MailService::send($to, $subject, $html, $text);
     }
 }
