@@ -460,7 +460,7 @@
             <table class="w-full text-left border-collapse text-xs font-mono">
               <thead>
                 <tr class="border-b border-slate-800 bg-slate-950/70 text-slate-400 uppercase text-[10px] tracking-wider select-none">
-                  <th class="py-2.5 px-4 w-44">Timestamp (UTC)</th>
+                  <th class="py-2.5 px-4 w-52">Time (NPT)</th>
                   <th class="py-2.5 px-3 w-24">Severity</th>
                   <th class="py-2.5 px-4">Message</th>
                   <th class="py-2.5 px-3 w-16 text-right">Inspect</th>
@@ -600,7 +600,7 @@
             <div class="space-y-4 text-xs font-mono">
               <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
                 <div class="flex justify-between"><span class="text-slate-500">Log ID:</span><span class="text-white" x-text="activeInspectLog?.id"></span></div>
-                <div class="flex justify-between"><span class="text-slate-500">Timestamp:</span><span class="text-white" x-text="activeInspectLog?.created_at"></span></div>
+                <div class="flex justify-between"><span class="text-slate-500">Timestamp (NPT):</span><span class="text-white" x-text="formatDate(activeInspectLog?.created_at)"></span></div>
                 <div class="flex justify-between"><span class="text-slate-500">Project:</span><span class="text-brand-400" x-text="activeInspectLog?.endpoint_name + ' (' + activeInspectLog?.endpoint_slug + ')'"></span></div>
                 <div class="flex justify-between"><span class="text-slate-500">Origin IP:</span><span class="text-slate-300" x-text="activeInspectLog?.ip_address"></span></div>
               </div>
@@ -888,7 +888,7 @@
               if (this.projectLogs.length > 0) {
                 this.latestLogId = Math.max(...this.projectLogs.map(l => Number(l.id)));
               }
-              this.lastSyncTime = new Date().toLocaleTimeString();
+              this.lastSyncTime = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) + ' NPT';
             }
           } catch (e) {
             console.error('Error fetching project logs', e);
@@ -1034,7 +1034,28 @@
 
         formatDate(dateStr) {
           if (!dateStr) return '';
-          return dateStr.replace('T', ' ').substring(0, 19);
+          try {
+            const utcStr = dateStr.includes('Z') || dateStr.includes('+') ? dateStr : dateStr.replace(' ', 'T') + 'Z';
+            const d = new Date(utcStr);
+            if (isNaN(d.getTime())) return dateStr;
+
+            const parts = new Intl.DateTimeFormat('en-US', {
+              timeZone: 'Asia/Kathmandu',
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: true
+            }).formatToParts(d);
+
+            const map = {};
+            parts.forEach(p => map[p.type] = p.value);
+            return `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute}:${map.second} ${map.dayPeriod || ''}`.trim();
+          } catch (e) {
+            return dateStr;
+          }
         }
       }
     }
