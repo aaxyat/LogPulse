@@ -1,0 +1,223 @@
+#!/usr/bin/env php
+<?php
+declare(strict_types=1);
+
+/**
+ * LogPulse CLI & Cron Runner for cPanel
+ */
+
+require_once dirname(__DIR__) . '/src/Database/DB.php';
+require_once dirname(__DIR__) . '/src/Services/RetentionService.php';
+require_once dirname(__DIR__) . '/src/Services/AlertService.php';
+require_once dirname(__DIR__) . '/src/Services/UptimeService.php';
+
+use LogPulse\Database\DB;
+use LogPulse\Services\RetentionService;
+use LogPulse\Services\AlertService;
+use LogPulse\Services\UptimeService;
+
+$configPath = dirname(__DIR__) . '/config/config.php';
+if (!file_exists($configPath)) {
+    $configPath = dirname(__DIR__) . '/config/config.example.php';
+}
+$config = require $configPath;
+DB::init($config['database']);
+
+$command = $argv[1] ?? 'help';
+
+switch ($command) {
+    case 'migrate':
+        echo "==> Running LogPulse database migrations...\n";
+        $driver = $config['database']['driver'] ?? 'mysql';
+
+        if ($driver === 'sqlite') {
+            $pdo = DB::pdo();
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    email TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'user',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS endpoints (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    slug TEXT NOT NULL UNIQUE,
+                    ingest_token TEXT NOT NULL UNIQUE,
+                    retention_days INTEGER NOT NULL DEFAULT 14,
+                    rate_limit_per_minute INTEGER NOT NULL DEFAULT 600,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    endpoint_id INTEGER NOT NULL,
+                    level TEXT NOT NULL DEFAULT 'INFO',
+                    message TEXT NOT NULL,
+                    context TEXT NULL,
+                    payload TEXT NULL,
+                    ip_address TEXT NULL,
+                    user_agent TEXT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (endpoint_id) REFERENCES endpoints(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_endpoint_created ON logs (endpoint_id, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_endpoint_level_created ON logs (endpoint_id, level, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS alert_rules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    endpoint_id INTEGER NULL,
+                    name TEXT NOT NULL,
+                    level_threshold TEXT NOT NULL DEFAULT 'ERROR',
+                    count_threshold INTEGER NOT NULL DEFAULT 5,
+                    time_window_minutes INTEGER NOT NULL DEFAULT 5,
+                    channel_type TEXT NOT NULL DEFAULT 'webhook',
+                    target_destination TEXT NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    last_triggered_at DATETIME NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (endpoint_id) REFERENCES endpoints(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS alert_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    rule_id INTEGER NOT NULL,
+                    endpoint_id INTEGER NULL,
+                    trigger_count INTEGER NOT NULL,
+                    details TEXT NULL,
+                    sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (rule_id) REFERENCES alert_rules(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS uptime_monitors (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    target_url TEXT NOT NULL,
+                    method TEXT NOT NULL DEFAULT 'GET',
+                    expected_status INTEGER NOT NULL DEFAULT 200,
+                    check_interval_minutes INTEGER NOT NULL DEFAULT 5,
+                    timeout_seconds INTEGER NOT NULL DEFAULT 10,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    last_checked_at DATETIME NULL,
+                    last_status_code INTEGER NULL,
+                    last_response_time_ms INTEGER NULL,
+                    last_is_up INTEGER NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS check_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    monitor_id INTEGER NOT NULL,
+                    status_code INTEGER NULL,
+                    response_time_ms INTEGER NOT NULL DEFAULT 0,
+                    is_up INTEGER NOT NULL DEFAULT 0,
+                    error_message TEXT NULL,
+                    checked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (monitor_id) REFERENCES uptime_monitors(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_monitor_checked ON check_runs (monitor_id, checked_at DESC);
+            ");
+        } else {
+            $schemaFile = dirname(__DIR__) . '/config/schema.sql';
+            $sql = file_get_contents($schemaFile);
+            DB::pdo()->exec($sql);
+        }
+
+        echo "✅ Migration completed successfully!\n";
+        break;
+
+    case 'seed:admin':
+        $email = $argv[2] ?? 'admin@logpulse.io';
+        $pass = $argv[3] ?? 'AdminSecret2026!';
+        $name = $argv[4] ?? 'Administrator';
+
+        $existing = DB::one("SELECT id FROM users WHERE email = :email", ['email' => $email]);
+        $hash = password_hash($pass, PASSWORD_BCRYPT);
+
+        if ($existing) {
+            DB::execute("UPDATE users SET password_hash = :hash, role = 'admin', status = 'active' WHERE id = :id", [
+                'hash' => $hash,
+                'id' => $existing['id']
+            ]);
+            echo "✅ Admin user [{$email}] password reset successfully!\n";
+        } else {
+            DB::execute("INSERT INTO users (name, email, password_hash, role, status, created_at)
+                         VALUES (:name, :email, :hash, 'admin', 'active', :created_at)", [
+                'name' => $name,
+                'email' => $email,
+                'hash' => $hash,
+                'created_at' => date('Y-m-d H:i:s'),
+            ]);
+            echo "✅ Admin user [{$email}] created successfully with password: {$pass}\n";
+        }
+        break;
+
+    case 'cron:run':
+        echo "[" . date('Y-m-d H:i:s') . "] Starting cPanel LogPulse Cron Run...\n";
+
+        // 1. Retention pruning
+        $retention = RetentionService::pruneAll();
+        echo "  • Retention: " . count($retention['endpoints']) . " endpoints evaluated.\n";
+
+        // 2. Alert evaluations
+        $triggeredAlerts = AlertService::evaluateAll();
+        echo "  • Alerts: {$triggeredAlerts} rules triggered.\n";
+
+        // 3. Uptime pings
+        $pings = UptimeService::checkAll();
+        echo "  • Uptime: " . count($pings) . " monitors probed.\n";
+
+        echo "✅ Cron run finished.\n";
+        break;
+
+    case 'prune:logs':
+        echo "==> Running retention policy log pruning...\n";
+        $res = RetentionService::pruneAll();
+        print_r($res);
+        echo "✅ Retention pruning complete.\n";
+        break;
+
+    case 'alert:check':
+        echo "==> Evaluating alert rules...\n";
+        $triggered = AlertService::evaluateAll();
+        echo "✅ {$triggered} alerts triggered.\n";
+        break;
+
+    case 'monitor:ping':
+        echo "==> Probing all active uptime monitors...\n";
+        $results = UptimeService::checkAll();
+        foreach ($results as $r) {
+            $status = $r['is_up'] ? "UP ({$r['response_time_ms']}ms)" : "DOWN ({$r['error']})";
+            echo "  [{$r['name']}] {$r['url']} => {$status}\n";
+        }
+        echo "✅ Uptime probing complete.\n";
+        break;
+
+    case 'help':
+    default:
+        echo "LogPulse CLI Console\n";
+        echo "Usage: php bin/console <command>\n\n";
+        echo "Available commands:\n";
+        echo "  migrate                Run schema migrations for MySQL or SQLite\n";
+        echo "  seed:admin [email] [pw] Seed or reset the primary admin account\n";
+        echo "  cron:run               Execute all scheduled tasks (retention, alerts, uptime)\n";
+        echo "  prune:logs             Manually execute retention cleanup\n";
+        echo "  alert:check            Evaluate threshold alert rules\n";
+        echo "  monitor:ping           Execute probe on all active uptime monitors\n";
+        break;
+}

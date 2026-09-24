@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LogPulse — Project Observability & Log Ingestion</title>
+  <!-- Theme initialization script (before body to prevent FOUC) -->
+  <script>
+    (function() {
+      function getPreferredTheme() {
+        const stored = localStorage.getItem('lp_theme');
+        if (stored === 'light' || stored === 'dark') return stored;
+        return 'system';
+      }
+      function updateTheme(theme) {
+        const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (isDark) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      }
+      const initial = getPreferredTheme();
+      updateTheme(initial);
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        if ((localStorage.getItem('lp_theme') || 'system') === 'system') {
+          updateTheme('system');
+        }
+      });
+    })();
+  </script>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Alpine.js CDN -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              400: '#38bdf8',
+              500: '#0ea5e9',
+              600: '#0284c7',
+            },
+            slate: {
+              850: '#111827',
+              900: '#0b0f19',
+              950: '#06090f',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Menlo', 'Monaco', 'Courier New', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    [x-cloak] { display: none !important; }
+    html.dark, html.dark body {
+      background-color: #06090f !important;
+      color: #f1f5f9 !important;
+    }
+    html:not(.dark), html:not(.dark) body {
+      background-color: #f8fafc !important;
+      color: #0f172a !important;
+    }
+    html:not(.dark) header {
+      background-color: #ffffff !important;
+      border-color: #e2e8f0 !important;
+    }
+    html:not(.dark) h2, html:not(.dark) h3, html:not(.dark) .font-bold.text-white {
+      color: #0f172a !important;
+    }
+    html:not(.dark) .text-slate-200,
+    html:not(.dark) .text-slate-300 {
+      color: #1e293b !important;
+    }
+    html:not(.dark) .text-slate-400 {
+      color: #475569 !important;
+    }
+    html:not(.dark) .text-slate-500 {
+      color: #64748b !important;
+    }
+    html:not(.dark) .text-white {
+      color: #0f172a !important;
+    }
+    html:not(.dark) div.bg-slate-900,
+    html:not(.dark) .bg-slate-900 {
+      background-color: #ffffff !important;
+      border-color: #e2e8f0 !important;
+      color: #0f172a !important;
+    }
+    html:not(.dark) div.bg-slate-950,
+    html:not(.dark) .bg-slate-950 {
+      background-color: #f8fafc !important;
+      border-color: #e2e8f0 !important;
+      color: #0f172a !important;
+    }
+    html:not(.dark) .project-card {
+      background-color: #ffffff !important;
+      border-color: #e2e8f0 !important;
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05) !important;
+    }
+    html:not(.dark) .project-card * {
+      color: #0f172a;
+    }
+    html:not(.dark) .project-card .text-slate-400,
+    html:not(.dark) .project-card .text-slate-500 {
+      color: #64748b !important;
+    }
+    html:not(.dark) .project-card .font-mono {
+      color: #334155;
+    }
+    html:not(.dark) table {
+      background-color: #ffffff !important;
+    }
+    html:not(.dark) th {
+      color: #475569 !important;
+      background-color: #f8fafc !important;
+    }
+    html:not(.dark) td {
+      color: #1e293b !important;
+      border-color: #f1f5f9 !important;
+    }
+    html:not(.dark) input, html:not(.dark) select, html:not(.dark) textarea {
+      background-color: #ffffff !important;
+      border-color: #cbd5e1 !important;
+      color: #0f172a !important;
+    }
+    html:not(.dark) .border-dashed {
+      border-color: #cbd5e1 !important;
+      background-color: #ffffff !important;
+    }
+    html:not(.dark) .log-row:hover {
+      background-color: #f8fafc !important;
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    .dark ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    .log-row:hover { background-color: rgba(30, 41, 59, 0.7); }
+    .pulse-dot {
+      box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7);
+      animation: pulse-ring 2s infinite;
+    }
+    @keyframes pulse-ring {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(52, 211, 153, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen flex flex-col" x-data="logpulseApp()" x-init="initApp()" x-cloak>
+
+  <!-- Login Modal Overlay (Shown when unauthenticated) -->
+  <div x-show="!authenticated" class="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-8 max-w-md w-full shadow-2xl relative overflow-hidden">
+      <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-brand-500 via-emerald-400 to-rose-500"></div>
+      
+      <div class="flex items-center gap-3 mb-6">
+        <div class="h-10 w-10 rounded-lg bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400 font-mono font-bold text-xl">
+          LP
+        </div>
+        <div>
+          <h1 class="text-xl font-bold tracking-tight text-white">LogPulse</h1>
+          <p class="text-xs text-slate-400">Project-Based Observability & Ingestion</p>
+        </div>
+      </div>
+
+      <form @submit.prevent="login" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Email Address</label>
+          <input type="email" x-model="loginEmail" required class="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-slate-500 outline-none transition" placeholder="admin@logpulse.io">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Password</label>
+          <input type="password" x-model="loginPassword" required class="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-slate-500 outline-none transition" placeholder="••••••••">
+        </div>
+
+        <div x-show="loginError" class="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs rounded-lg" x-text="loginError"></div>
+
+        <button type="submit" :disabled="loading" class="w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-slate-950 font-semibold rounded-lg py-2.5 text-sm transition flex items-center justify-center gap-2">
+          <span x-show="!loading">Authenticate to Dashboard</span>
+          <span x-show="loading">Authenticating...</span>
+        </button>
+
+        <div class="text-center pt-2">
+          <span class="text-xs text-slate-500">Default: admin@logpulse.io / AdminSecret2026!</span>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Authenticated Shell -->
+  <div x-show="authenticated" class="flex-1 flex flex-col">
+
+    <!-- Top Global Header -->
+    <header class="border-b border-slate-800/80 bg-slate-900/70 backdrop-blur-md sticky top-0 z-40 px-6 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-5">
+        <button @click="backToProjects()" class="flex items-center gap-2.5 hover:opacity-90 transition">
+          <div class="h-8 w-8 rounded-lg bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400 font-mono font-bold text-sm">
+            LP
+          </div>
+          <span class="font-bold text-white tracking-tight text-base">LogPulse</span>
+        </button>
+
+        <!-- Dynamic Breadcrumb -->
+        <template x-if="activeProject">
+          <div class="flex items-center gap-2 text-xs">
+            <span class="text-slate-600">/</span>
+            <button @click="backToProjects()" class="text-slate-400 hover:text-slate-200 transition">Projects</button>
+            <span class="text-slate-600">/</span>
+            <div class="flex items-center gap-2 px-2.5 py-1 rounded bg-slate-800 text-white font-medium border border-slate-700">
+              <span class="w-2 h-2 rounded-full" :class="activeProject.uptime?.is_up ? 'bg-emerald-400 pulse-dot' : (activeProject.target_url ? 'bg-rose-500' : 'bg-slate-400')"></span>
+              <span x-text="activeProject.name"></span>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Header Right Actions -->
+      <div class="flex items-center gap-3">
+        <!-- API Docs link -->
+        <a href="/docs" target="_blank" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs text-slate-600 dark:text-slate-300 hover:text-brand-500 transition shadow-sm font-medium">
+          <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h4m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+          <span>API Docs</span>
+        </a>
+
+        <!-- Theme Switcher -->
+        <button @click="cycleTheme()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs text-slate-600 dark:text-slate-300 hover:text-brand-500 transition shadow-sm" :title="'Current theme: ' + themeMode">
+          <template x-if="themeMode === 'system'">
+            <span class="flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+              <span class="capitalize">System</span>
+            </span>
+          </template>
+          <template x-if="themeMode === 'light'">
+            <span class="flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+              <span>Light</span>
+            </span>
+          </template>
+          <template x-if="themeMode === 'dark'">
+            <span class="flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+              <span>Dark</span>
+            </span>
+          </template>
+        </button>
+
+        <button @click="showNewProjectModal = true" class="bg-brand-500 hover:bg-brand-600 text-slate-950 font-semibold text-xs px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 shadow-sm">
+          <span>+ New Project</span>
+        </button>
+
+        <!-- User Badge & Logout -->
+        <div class="flex items-center gap-2 pl-3 border-l border-slate-800 text-xs">
+          <div class="text-right">
+            <div class="text-white font-medium" x-text="currentUser.name || 'User'"></div>
+            <div class="text-[10px] text-slate-400 font-mono capitalize" x-text="currentUser.role"></div>
+          </div>
+          <button @click="logout" class="p-1.5 text-slate-400 hover:text-rose-400 transition" title="Logout">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- VIEW 1: PROJECTS HUB (CARD GRID) -->
+    <main x-show="!activeProject" class="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
+      
+      <!-- Hub Header & Search -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+        <div>
+          <h2 class="text-xl font-bold text-white tracking-tight">Monitored Projects</h2>
+          <p class="text-xs text-slate-400 mt-0.5">Select an application to inspect live log streams, health latency, and ingest tokens.</p>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <div class="relative w-64">
+            <input type="text" x-model="projectSearch" placeholder="Filter projects..." class="w-full bg-slate-900 border border-slate-800 focus:border-brand-500 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition font-mono">
+            <svg class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+          </div>
+          <button @click="fetchProjects()" class="p-2 text-slate-400 hover:text-white bg-slate-900 border border-slate-800 rounded-lg transition" title="Refresh projects">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Project Cards Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <template x-for="p in filteredProjects" :key="p.id">
+          <div @click="openProject(p)" class="project-card bg-slate-900 border border-slate-800 hover:border-brand-500/60 rounded-xl p-5 shadow-lg flex flex-col justify-between transition hover:-translate-y-0.5 group cursor-pointer">
+            <div>
+              <!-- Card Header -->
+              <div class="flex items-start justify-between gap-3 mb-2">
+                <div>
+                  <h3 class="font-bold text-white text-base group-hover:text-brand-400 transition" x-text="p.name"></h3>
+                  <div class="text-[11px] font-mono text-slate-400" x-text="p.slug"></div>
+                </div>
+
+                <!-- Status Badge -->
+                <template x-if="p.target_url">
+                  <span class="px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide flex items-center gap-1.5" :class="p.uptime?.is_up ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'">
+                    <span class="w-1.5 h-1.5 rounded-full" :class="p.uptime?.is_up ? 'bg-emerald-400 pulse-dot' : 'bg-rose-400'"></span>
+                    <span x-text="p.uptime?.is_up ? (p.uptime.response_time_ms + 'ms') : 'DOWN'"></span>
+                  </span>
+                </template>
+                <template x-if="!p.target_url">
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
+                    INGEST ONLY
+                  </span>
+                </template>
+              </div>
+
+              <!-- Description -->
+              <p class="text-xs text-slate-400 line-clamp-2 mb-4" x-text="p.description || 'No description configured for this project.'"></p>
+
+              <!-- Metrics Strip -->
+              <div class="grid grid-cols-3 gap-2 bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-center font-mono text-xs mb-4">
+                <div>
+                  <div class="text-[10px] text-slate-500 uppercase">Total Logs</div>
+                  <div class="text-white font-bold" x-text="p.log_count">0</div>
+                </div>
+                <div>
+                  <div class="text-[10px] text-slate-500 uppercase">24h Errors</div>
+                  <div :class="p.error_count_24h > 0 ? 'text-rose-400 font-bold' : 'text-slate-400'" x-text="p.error_count_24h">0</div>
+                </div>
+                <div>
+                  <div class="text-[10px] text-slate-500 uppercase">Retention</div>
+                  <div class="text-slate-300" x-text="p.retention_days + 'd'">14d</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card Bottom Action -->
+            <div class="border-t border-slate-800/80 pt-3 flex items-center justify-between">
+              <div class="flex items-center gap-1.5 text-xs text-slate-400">
+                <span class="font-mono text-[10px] text-slate-500 truncate max-w-[100px]" x-text="p.ingest_token.substring(0, 8) + '•••'"></span>
+                <button @click.stop="copyText(p.ingest_token, 'Ingest token copied!')" class="text-brand-400 hover:text-brand-300 text-[11px]" title="Copy ingest token">&#x2398;</button>
+              </div>
+              
+              <button @click="openProject(p)" class="bg-slate-800 hover:bg-brand-500 group-hover:bg-brand-500 text-slate-200 group-hover:text-slate-950 font-semibold text-xs px-3.5 py-1.5 rounded-lg transition flex items-center gap-1">
+                <span>Open Monitoring</span>
+                <span>&rarr;</span>
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <!-- Create New Project Card Button -->
+        <button @click="showNewProjectModal = true" class="border-2 border-dashed border-slate-800 hover:border-brand-500/50 hover:bg-slate-900/30 rounded-xl p-8 flex flex-col items-center justify-center text-center transition group min-h-[220px]">
+          <div class="h-10 w-10 rounded-full bg-slate-900 border border-slate-800 group-hover:border-brand-500/40 flex items-center justify-center text-slate-400 group-hover:text-brand-400 mb-2 transition">
+            <span class="text-xl font-bold">+</span>
+          </div>
+          <span class="text-sm font-bold text-white group-hover:text-brand-400 transition">Add Monitored Project</span>
+          <span class="text-xs text-slate-500 mt-1 max-w-xs">Pipes logs from audiobookshelf, microservices, or external APIs</span>
+        </button>
+      </div>
+    </main>
+
+    <!-- VIEW 2: DEDICATED PROJECT MONITORING VIEW -->
+    <main x-show="activeProject" class="flex-1 p-6 max-w-7xl w-full mx-auto space-y-5">
+      
+      <!-- Project Context Header -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div class="flex items-center gap-3 mb-1">
+            <h2 class="text-xl font-bold text-white tracking-tight" x-text="activeProject?.name"></h2>
+            <template x-if="activeProject?.target_url">
+              <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide flex items-center gap-1.5" :class="activeProject?.uptime?.is_up ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'">
+                <span class="w-1.5 h-1.5 rounded-full" :class="activeProject?.uptime?.is_up ? 'bg-emerald-400 pulse-dot' : 'bg-rose-400'"></span>
+                <span x-text="activeProject?.uptime?.is_up ? ('ONLINE (' + activeProject?.uptime?.response_time_ms + 'ms)') : 'DOWN'"></span>
+              </span>
+            </template>
+          </div>
+          <div class="text-xs text-slate-400 flex items-center gap-3">
+            <span x-text="activeProject?.description || 'Active Monitored Endpoint'"></span>
+            <template x-if="activeProject?.target_url">
+              <a :href="activeProject.target_url" target="_blank" class="text-brand-400 hover:underline flex items-center gap-1 font-mono text-[11px]">
+                <span x-text="activeProject.target_url"></span>
+                <span>&nearr;</span>
+              </a>
+            </template>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <!-- Ping Probe Button -->
+          <template x-if="activeProject?.target_url">
+            <button @click="pingActiveProject()" :disabled="probing" class="bg-slate-800 hover:bg-slate-700 text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-200 transition font-mono">
+              <span x-show="!probing">Ping Health Probe</span>
+              <span x-show="probing">Probing...</span>
+            </button>
+          </template>
+
+          <button id="btn-tab-stream" @click="projectTab = 'stream'" :class="projectTab === 'stream' ? 'bg-brand-500 text-slate-950 font-bold' : 'bg-slate-800 text-slate-300 hover:text-white'" class="text-xs px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5">
+            <span class="w-1.5 h-1.5 rounded-full" :class="isPolling ? 'bg-emerald-400' : 'bg-slate-400'"></span>
+            Live Logs
+          </button>
+          <button id="btn-tab-snippets" @click="projectTab = 'snippets'" :class="projectTab === 'snippets' ? 'bg-brand-500 text-slate-950 font-bold' : 'bg-slate-800 text-slate-300 hover:text-white'" class="text-xs px-3.5 py-1.5 rounded-lg transition">
+            Ingest Snippets
+          </button>
+          <button @click="backToProjects()" class="text-xs px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-white transition">
+            &larr; Projects
+          </button>
+        </div>
+      </div>
+
+      <!-- SUB-TAB 1: LIVE STREAM FOR ACTIVE PROJECT -->
+      <div x-show="projectTab === 'stream'" class="space-y-4">
+        <!-- Controls & Filters Bar -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <!-- Play/Pause Toggle -->
+            <button @click="togglePolling" :class="isPolling ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border-amber-500/30'" class="px-3 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition">
+              <span class="w-2 h-2 rounded-full" :class="isPolling ? 'bg-emerald-400' : 'bg-amber-400'"></span>
+              <span x-text="isPolling ? 'PAUSE STREAM' : 'RESUME STREAM'"></span>
+            </button>
+
+            <!-- Auto-Refresh Selector -->
+            <select x-model.number="pollIntervalSec" @change="resetPollingTimer" class="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-lg px-2.5 py-1.5 outline-none focus:border-brand-500">
+              <option value="1">1s Auto-Refresh</option>
+              <option value="3">3s Auto-Refresh</option>
+              <option value="5">5s Auto-Refresh</option>
+            </select>
+
+            <div class="h-5 w-px bg-slate-800 mx-1"></div>
+
+            <!-- Severity Filter Pills -->
+            <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs font-mono">
+              <template x-for="lvl in ['ALL', 'INFO', 'WARN', 'ERROR', 'DEBUG']" :key="lvl">
+                <button @click="setSeverityFilter(lvl)" 
+                        :class="selectedLevel === lvl ? 'bg-slate-800 text-white font-bold' : 'text-slate-400 hover:text-slate-200'"
+                        class="px-2.5 py-1 rounded transition text-[11px]" 
+                        x-text="lvl">
+                </button>
+              </template>
+            </div>
+          </div>
+
+          <!-- Search Input -->
+          <div class="flex items-center gap-2 flex-1 max-w-sm justify-end">
+            <div class="relative flex-1">
+              <input type="text" x-model="searchQuery" @input.debounce.300ms="fetchProjectLogs(true)" placeholder="Filter logs (grep, message)..." class="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 outline-none transition font-mono">
+              <svg class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            </div>
+            <button @click="fetchProjectLogs(true)" class="p-1.5 text-slate-400 hover:text-white bg-slate-950 border border-slate-800 rounded-lg transition" title="Manual Refresh">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Terminal Log Table -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs font-mono">
+              <thead>
+                <tr class="border-b border-slate-800 bg-slate-950/70 text-slate-400 uppercase text-[10px] tracking-wider select-none">
+                  <th class="py-2.5 px-4 w-44">Timestamp (UTC)</th>
+                  <th class="py-2.5 px-3 w-24">Severity</th>
+                  <th class="py-2.5 px-4">Message</th>
+                  <th class="py-2.5 px-3 w-16 text-right">Inspect</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-800/60">
+                <template x-for="log in projectLogs" :key="log.id">
+                  <tr class="log-row cursor-pointer transition" @click="inspectLog(log.id)">
+                    <td class="py-2.5 px-4 text-slate-400 whitespace-nowrap" x-text="formatDate(log.created_at)"></td>
+                    <td class="py-2.5 px-3 whitespace-nowrap">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-bold tracking-wide" :class="getLevelBadgeClass(log.level)" x-text="log.level"></span>
+                    </td>
+                    <td class="py-2.5 px-4 text-slate-200 truncate max-w-2xl font-mono" x-text="log.message"></td>
+                    <td class="py-2.5 px-3 text-right">
+                      <span class="text-brand-400 hover:text-brand-300 font-sans text-xs">View &rarr;</span>
+                    </td>
+                  </tr>
+                </template>
+
+                <tr x-show="projectLogs.length === 0">
+                  <td colspan="4" class="py-12 text-center text-slate-500 font-sans">
+                    <div class="flex flex-col items-center justify-center gap-2">
+                      <svg class="w-8 h-8 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h4m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                      <span>No log records match this project's filters.</span>
+                      <button @click="projectTab = 'snippets'" class="text-xs text-brand-400 underline mt-1">Send logs using API Console</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="bg-slate-950 px-4 py-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400 font-mono">
+            <div>
+              Project: <span class="text-white font-bold" x-text="activeProject?.name"></span> &bull; <span x-text="projectLogs.length"></span> cached rows
+            </div>
+            <div class="flex items-center gap-4">
+              <span>Status: <span class="text-emerald-400 font-semibold" x-text="isPolling ? 'Streaming' : 'Paused'"></span></span>
+              <span>Last Sync: <span class="text-slate-200" x-text="lastSyncTime || 'Just now'"></span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUB-TAB 2: API CONSOLE & CODE SNIPPETS FOR ACTIVE PROJECT -->
+      <div x-show="projectTab === 'snippets'" class="space-y-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h3 class="text-base font-bold text-white">Ingestion Snippets for <span class="text-brand-400" x-text="activeProject?.name"></span></h3>
+              <p class="text-xs text-slate-400">Pipes logs directly into this project's stream using the dedicated Ingest Token.</p>
+            </div>
+            <div class="text-xs font-mono bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 text-slate-300 flex items-center gap-2">
+              <span class="text-slate-500">Token:</span>
+              <span class="text-brand-400" x-text="activeProject?.ingest_token"></span>
+              <button @click="copyText(activeProject?.ingest_token, 'Token copied!')" class="text-slate-400 hover:text-white" title="Copy">&#x2398;</button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Direct Test Sender -->
+            <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-brand-400"></span>
+                Direct Ingestion Test Sender
+              </h4>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-[11px] text-slate-400 mb-1">Severity Level</label>
+                  <select x-model="testSender.level" class="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg px-3 py-2 text-white outline-none">
+                    <option value="INFO">INFO</option>
+                    <option value="WARN">WARN</option>
+                    <option value="ERROR">ERROR</option>
+                    <option value="DEBUG">DEBUG</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-[11px] text-slate-400 mb-1">Component / Module</label>
+                  <input type="text" x-model="testSender.module" placeholder="scanner" class="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg px-3 py-2 text-white outline-none font-mono">
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-[11px] text-slate-400 mb-1">Log Message</label>
+                <input type="text" x-model="testSender.message" placeholder="Library scan finished successfully" class="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg px-3 py-2 text-white outline-none font-mono">
+              </div>
+
+              <div>
+                <label class="block text-[11px] text-slate-400 mb-1">Context JSON (Metadata)</label>
+                <textarea x-model="testSender.contextJson" rows="3" class="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2.5 text-slate-200 outline-none font-mono"></textarea>
+              </div>
+
+              <button @click="sendProjectTestLog" :disabled="testSender.sending" class="w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-slate-950 font-semibold py-2 rounded-lg text-xs transition">
+                <span x-show="!testSender.sending">POST Test Log to Project</span>
+                <span x-show="testSender.sending">Dispatching...</span>
+              </button>
+
+              <div x-show="testSender.response" class="p-3 bg-slate-900 border border-slate-800 rounded-lg text-[11px] font-mono text-emerald-400" x-text="testSender.response"></div>
+            </div>
+
+            <!-- Code Generator -->
+            <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-1 text-xs font-medium">
+                  <button @click="activeSnippetLang = 'curl'" :class="activeSnippetLang === 'curl' ? 'bg-slate-800 text-white' : 'text-slate-400'" class="px-2.5 py-1 rounded">cURL</button>
+                  <button @click="activeSnippetLang = 'python'" :class="activeSnippetLang === 'python' ? 'bg-slate-800 text-white' : 'text-slate-400'" class="px-2.5 py-1 rounded">Python</button>
+                  <button @click="activeSnippetLang = 'nodejs'" :class="activeSnippetLang === 'nodejs' ? 'bg-slate-800 text-white' : 'text-slate-400'" class="px-2.5 py-1 rounded">Node.js</button>
+                  <button @click="activeSnippetLang = 'docker'" :class="activeSnippetLang === 'docker' ? 'bg-slate-800 text-white' : 'text-slate-400'" class="px-2.5 py-1 rounded">Docker Log Pipe</button>
+                </div>
+                <button @click="copyActiveSnippet" class="text-xs text-brand-400 hover:underline">Copy</button>
+              </div>
+
+              <pre class="bg-slate-900 border border-slate-800/80 rounded-lg p-3 text-[11px] font-mono text-slate-300 overflow-x-auto flex-1 leading-relaxed" x-text="getProjectSnippetCode()"></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Slide-over Log Event Inspector Drawer -->
+    <div x-show="activeInspectLog" class="fixed inset-0 z-50 overflow-hidden" @keydown.escape.window="activeInspectLog = null">
+      <div class="absolute inset-0 bg-slate-950/70 backdrop-blur-sm transition-opacity" @click="activeInspectLog = null"></div>
+      
+      <div class="fixed inset-y-0 right-0 max-w-full flex pl-10">
+        <div class="w-screen max-w-xl bg-slate-900 border-l border-slate-800 shadow-2xl p-6 flex flex-col justify-between overflow-y-auto">
+          <div>
+            <div class="flex items-center justify-between border-b border-slate-800 pb-4 mb-6">
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded text-xs font-bold font-mono" :class="getLevelBadgeClass(activeInspectLog?.level)" x-text="activeInspectLog?.level"></span>
+                <span class="text-sm font-bold text-white">Log Event Inspector</span>
+              </div>
+              <button @click="activeInspectLog = null" class="text-slate-400 hover:text-white">&times;</button>
+            </div>
+
+            <!-- Metadata Cards -->
+            <div class="space-y-4 text-xs font-mono">
+              <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+                <div class="flex justify-between"><span class="text-slate-500">Log ID:</span><span class="text-white" x-text="activeInspectLog?.id"></span></div>
+                <div class="flex justify-between"><span class="text-slate-500">Timestamp:</span><span class="text-white" x-text="activeInspectLog?.created_at"></span></div>
+                <div class="flex justify-between"><span class="text-slate-500">Project:</span><span class="text-brand-400" x-text="activeInspectLog?.endpoint_name + ' (' + activeInspectLog?.endpoint_slug + ')'"></span></div>
+                <div class="flex justify-between"><span class="text-slate-500">Origin IP:</span><span class="text-slate-300" x-text="activeInspectLog?.ip_address"></span></div>
+              </div>
+
+              <div>
+                <h4 class="text-xs uppercase font-sans font-bold tracking-wider text-slate-400 mb-2">Message Body</h4>
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-slate-200 whitespace-pre-wrap leading-relaxed" x-text="activeInspectLog?.message"></div>
+              </div>
+
+              <div x-show="activeInspectLog?.context">
+                <h4 class="text-xs uppercase font-sans font-bold tracking-wider text-slate-400 mb-2">Structured Context</h4>
+                <pre class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-emerald-400 text-[11px] overflow-x-auto" x-text="JSON.stringify(activeInspectLog?.context, null, 2)"></pre>
+              </div>
+
+              <div>
+                <h4 class="text-xs uppercase font-sans font-bold tracking-wider text-slate-400 mb-2">Raw JSON Payload</h4>
+                <pre class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-slate-400 text-[11px] overflow-x-auto" x-text="JSON.stringify(activeInspectLog?.payload, null, 2)"></pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="border-t border-slate-800 pt-4 mt-6">
+            <button @click="activeInspectLog = null" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-medium py-2 rounded-lg text-xs transition">Close Inspector</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create Project Modal -->
+    <div x-show="showNewProjectModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-md w-full shadow-2xl">
+        <h3 class="text-base font-bold text-white mb-1">Create Monitored Project</h3>
+        <p class="text-xs text-slate-400 mb-4">Provisions a dedicated log ingest channel and optional HTTP health monitor.</p>
+
+        <form @submit.prevent="createProject" class="space-y-4">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Project Name *</label>
+            <input type="text" x-model="newProject.name" required placeholder="e.g. Audiobookshelf, Billing API" class="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-2 text-xs text-white outline-none">
+          </div>
+
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Description (Optional)</label>
+            <input type="text" x-model="newProject.description" placeholder="e.g. Self-hosted audiobook & podcast server" class="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-2 text-xs text-white outline-none">
+          </div>
+
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Target URL for Health Check (Optional)</label>
+            <input type="url" x-model="newProject.target_url" placeholder="https://audiobooks.yourdomain.com" class="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-2 text-xs text-white outline-none font-mono">
+          </div>
+
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Log Retention Window (Days)</label>
+            <input type="number" x-model.number="newProject.retention_days" min="1" max="90" required class="w-full bg-slate-950 border border-slate-800 focus:border-brand-500 rounded-lg px-3 py-2 text-xs text-white outline-none">
+          </div>
+
+          <div class="flex justify-end gap-2 pt-2">
+            <button type="button" @click="showNewProjectModal = false" class="px-4 py-2 text-xs text-slate-400 hover:text-white">Cancel</button>
+            <button type="submit" class="bg-brand-500 hover:bg-brand-600 text-slate-950 font-semibold px-4 py-2 text-xs rounded-lg transition">Create Project</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    function logpulseApp() {
+      return {
+        authenticated: false,
+        token: localStorage.getItem('lp_token') || '',
+        currentUser: {},
+        themeMode: localStorage.getItem('lp_theme') || 'system',
+        loading: false,
+
+        // Login form
+        loginEmail: 'admin@logpulse.io',
+        loginPassword: 'AdminSecret2026!',
+        loginError: '',
+
+        // Projects
+        projects: [],
+        projectSearch: '',
+        activeProject: null,
+        projectTab: 'stream', // 'stream' or 'snippets'
+        probing: false,
+
+        // Project Logs
+        projectLogs: [],
+        latestLogId: 0,
+        isPolling: true,
+        pollIntervalSec: 3,
+        pollTimer: null,
+        selectedLevel: 'ALL',
+        searchQuery: '',
+        lastSyncTime: '',
+        activeInspectLog: null,
+
+        // Modals
+        showNewProjectModal: false,
+        newProject: { name: '', description: '', target_url: '', retention_days: 14 },
+
+        // Test sender inside project
+        testSender: {
+          level: 'INFO',
+          module: 'server',
+          message: 'Service initialized and listening',
+          contextJson: '{\n  "version": "1.0.0",\n  "status": "ready"\n}',
+          sending: false,
+          response: ''
+        },
+
+        activeSnippetLang: 'curl',
+
+        get filteredProjects() {
+          if (!this.projectSearch) return this.projects;
+          const q = this.projectSearch.toLowerCase();
+          return this.projects.filter(p => 
+            p.name.toLowerCase().includes(q) || 
+            p.slug.toLowerCase().includes(q) || 
+            (p.description && p.description.toLowerCase().includes(q))
+          );
+        },
+
+        async initApp() {
+          if (this.token) {
+            await this.verifyAuth();
+          }
+        },
+
+        cycleTheme() {
+          if (this.themeMode === 'system') {
+            this.themeMode = 'light';
+          } else if (this.themeMode === 'light') {
+            this.themeMode = 'dark';
+          } else {
+            this.themeMode = 'system';
+          }
+          localStorage.setItem('lp_theme', this.themeMode);
+          this.applyTheme(this.themeMode);
+        },
+
+        applyTheme(mode) {
+          const isDark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        },
+
+        async login() {
+          this.loading = true;
+          this.loginError = '';
+          try {
+            const res = await fetch('/api/v1/auth/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: this.loginEmail, password: this.loginPassword })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+              this.loginError = data.error || 'Authentication failed.';
+              return;
+            }
+            this.token = data.token;
+            this.currentUser = data.user;
+            localStorage.setItem('lp_token', this.token);
+            this.authenticated = true;
+            await this.fetchProjects();
+          } catch (e) {
+            this.loginError = 'Server communication error: ' + e.message;
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        async verifyAuth() {
+          try {
+            const res = await fetch('/api/v1/auth/me', {
+              headers: { 'Authorization': 'Bearer ' + this.token }
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+              this.currentUser = data.user;
+              this.authenticated = true;
+              await this.fetchProjects();
+            } else {
+              this.logout();
+            }
+          } catch (e) {
+            this.logout();
+          }
+        },
+
+        logout() {
+          localStorage.removeItem('lp_token');
+          this.token = '';
+          this.authenticated = false;
+          this.currentUser = {};
+          if (this.pollTimer) clearInterval(this.pollTimer);
+        },
+
+        async fetchProjects() {
+          try {
+            const res = await fetch('/api/v1/projects', {
+              headers: { 'Authorization': 'Bearer ' + this.token }
+            });
+            const data = await res.json();
+            if (data.success) {
+              this.projects = data.projects || [];
+              if (this.activeProject) {
+                const refreshed = this.projects.find(p => p.id === this.activeProject.id);
+                if (refreshed) this.activeProject = refreshed;
+              }
+            }
+          } catch (e) {
+            console.error('Failed to fetch projects', e);
+          }
+        },
+
+        async createProject() {
+          try {
+            const res = await fetch('/api/v1/projects', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + this.token
+              },
+              body: JSON.stringify(this.newProject)
+            });
+            const data = await res.json();
+            if (data.success) {
+              this.showNewProjectModal = false;
+              this.newProject = { name: '', description: '', target_url: '', retention_days: 14 };
+              await this.fetchProjects();
+            } else {
+              alert(data.error || 'Failed to create project.');
+            }
+          } catch (e) {
+            alert('Error creating project: ' + e.message);
+          }
+        },
+
+        openProject(project) {
+          this.activeProject = project;
+          this.projectTab = 'stream';
+          this.projectLogs = [];
+          this.latestLogId = 0;
+          this.fetchProjectLogs(true);
+          this.startPolling();
+        },
+
+        backToProjects() {
+          this.activeProject = null;
+          this.activeInspectLog = null;
+          if (this.pollTimer) clearInterval(this.pollTimer);
+          this.fetchProjects();
+        },
+
+        async fetchProjectLogs(reset = false) {
+          if (!this.activeProject) return;
+          let url = `/api/v1/logs?endpoint_id=${this.activeProject.id}&limit=50`;
+          if (this.selectedLevel && this.selectedLevel !== 'ALL') {
+            url += `&level=${encodeURIComponent(this.selectedLevel)}`;
+          }
+          if (this.searchQuery) {
+            url += `&q=${encodeURIComponent(this.searchQuery)}`;
+          }
+          if (!reset && this.latestLogId > 0 && !this.searchQuery) {
+            url += `&since_id=${this.latestLogId}`;
+          }
+
+          try {
+            const res = await fetch(url, {
+              headers: { 'Authorization': 'Bearer ' + this.token }
+            });
+            const data = await res.json();
+            if (data.success) {
+              if (reset || !this.latestLogId) {
+                this.projectLogs = data.logs || [];
+              } else if (data.logs && data.logs.length > 0) {
+                this.projectLogs = [...data.logs, ...this.projectLogs].slice(0, 150);
+              }
+
+              if (this.projectLogs.length > 0) {
+                this.latestLogId = Math.max(...this.projectLogs.map(l => Number(l.id)));
+              }
+              this.lastSyncTime = new Date().toLocaleTimeString();
+            }
+          } catch (e) {
+            console.error('Error fetching project logs', e);
+          }
+        },
+
+        togglePolling() {
+          this.isPolling = !this.isPolling;
+          if (this.isPolling) {
+            this.startPolling();
+          } else {
+            if (this.pollTimer) clearInterval(this.pollTimer);
+          }
+        },
+
+        startPolling() {
+          if (this.pollTimer) clearInterval(this.pollTimer);
+          if (!this.isPolling) return;
+          this.pollTimer = setInterval(() => {
+            if (this.activeProject && this.projectTab === 'stream') {
+              this.fetchProjectLogs(false);
+            }
+          }, this.pollIntervalSec * 1000);
+        },
+
+        resetPollingTimer() {
+          this.startPolling();
+        },
+
+        setSeverityFilter(lvl) {
+          this.selectedLevel = lvl;
+          this.fetchProjectLogs(true);
+        },
+
+        async inspectLog(id) {
+          const res = await fetch(`/api/v1/logs/${id}`, {
+            headers: { 'Authorization': 'Bearer ' + this.token }
+          });
+          const data = await res.json();
+          if (data.success) {
+            this.activeInspectLog = data.log;
+          }
+        },
+
+        async pingActiveProject() {
+          if (!this.activeProject) return;
+          this.probing = true;
+          try {
+            const res = await fetch(`/api/v1/projects/${this.activeProject.id}/ping`, {
+              method: 'POST',
+              headers: { 'Authorization': 'Bearer ' + this.token }
+            });
+            const data = await res.json();
+            if (data.success) {
+              this.activeProject.uptime = data.uptime;
+            }
+          } catch (e) {
+            alert('Ping probe error: ' + e.message);
+          } finally {
+            this.probing = false;
+          }
+        },
+
+        async sendProjectTestLog() {
+          if (!this.activeProject) return;
+          this.testSender.sending = true;
+          this.testSender.response = '';
+
+          let parsedCtx = {};
+          try {
+            parsedCtx = JSON.parse(this.testSender.contextJson || '{}');
+          } catch (e) {
+            parsedCtx = { raw: this.testSender.contextJson };
+          }
+          parsedCtx.module = this.testSender.module;
+
+          const payload = {
+            level: this.testSender.level,
+            message: this.testSender.message,
+            context: parsedCtx,
+            timestamp: new Date().toISOString()
+          };
+
+          try {
+            const res = await fetch(`/api/v1/ingest/${this.activeProject.ingest_token}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            this.testSender.response = `200 OK: ${JSON.stringify(data)}`;
+            await this.fetchProjectLogs(false);
+          } catch (e) {
+            this.testSender.response = `Error: ${e.message}`;
+          } finally {
+            this.testSender.sending = false;
+          }
+        },
+
+        getProjectSnippetCode() {
+          if (!this.activeProject) return '';
+          const token = this.activeProject.ingest_token;
+          const host = window.location.origin;
+
+          if (this.activeSnippetLang === 'curl') {
+            return `curl -X POST "${host}/api/v1/ingest/${token}" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "level": "INFO",\n    "message": "${this.activeProject.name} status nominal",\n    "context": {"event": "heartbeat", "uptime_s": 86400}\n  }'`;
+          } else if (this.activeSnippetLang === 'python') {
+            return `import requests\n\nrequests.post(\n    "${host}/api/v1/ingest/${token}",\n    json={\n        "level": "ERROR",\n        "message": "Exception in ${this.activeProject.slug}",\n        "context": {"error": "Connection reset by peer"}\n    }\n)`;
+          } else if (this.activeSnippetLang === 'nodejs') {
+            return `await fetch('${host}/api/v1/ingest/${token}', {\n  method: 'POST',\n  headers: { 'Content-Type': 'application/json' },\n  body: JSON.stringify({\n    level: 'INFO',\n    message: 'Worker execution finished',\n    context: { project: '${this.activeProject.slug}' }\n  })\n});`;
+          } else if (this.activeSnippetLang === 'docker') {
+            return `# Stream Docker container logs directly to LogPulse:\ndocker logs -f ${this.activeProject.slug} 2>&1 | while read -r line; do\n  curl -s -X POST "${host}/api/v1/ingest/${token}" \\\n    -H "Content-Type: application/json" \\\n    -d "{\\"level\\": \\"INFO\\", \\"message\\": \\"\$line\\"}" > /dev/null\ndone`;
+          }
+          return '';
+        },
+
+        copyActiveSnippet() {
+          this.copyText(this.getProjectSnippetCode(), 'Snippet copied to clipboard!');
+        },
+
+        copyText(text, msg = 'Copied!') {
+          navigator.clipboard.writeText(text);
+          alert(msg);
+        },
+
+        getLevelBadgeClass(level) {
+          switch ((level || '').toUpperCase()) {
+            case 'CRITICAL':
+            case 'EMERGENCY':
+            case 'ALERT':
+            case 'ERROR':
+              return 'bg-rose-500/20 text-rose-400 border border-rose-500/30';
+            case 'WARN':
+            case 'WARNING':
+              return 'bg-amber-500/20 text-amber-400 border border-amber-500/30';
+            case 'DEBUG':
+              return 'bg-slate-700/50 text-slate-400 border border-slate-600/30';
+            case 'INFO':
+            default:
+              return 'bg-brand-500/20 text-brand-300 border border-brand-500/30';
+          }
+        },
+
+        formatDate(dateStr) {
+          if (!dateStr) return '';
+          return dateStr.replace('T', ' ').substring(0, 19);
+        }
+      }
+    }
+  </script>
+</body>
+</html>
